@@ -7,6 +7,10 @@ CORS(app)
 
 ee.Initialize(project="vayu-500508")
 
+# Cache variables
+HCHO_TILE_CACHE = None
+HCHO_HOTSPOT_CACHE = None
+
 
 def get_india_boundary():
     return ee.FeatureCollection("FAO/GAUL/2015/level0") \
@@ -43,25 +47,44 @@ def classify_hcho(value):
 def home():
     return {
         "status": "running",
-        "project": "VAYU"
+        "project": "VAYU",
+        "message": "Backend is active"
     }
 
 
 @app.route("/get_hcho_tile")
 def get_hcho_tile():
-    image = get_hcho_image()
+    global HCHO_TILE_CACHE
 
-    vis = {
-        "min": 0.00005,
-        "max": 0.0004,
-        "palette": ["blue", "cyan", "green", "yellow", "orange", "red"]
-    }
+    try:
+        if HCHO_TILE_CACHE is not None:
+            return jsonify({
+                "source": "cache",
+                "tile_url": HCHO_TILE_CACHE
+            })
 
-    map_id = image.getMapId(vis)
+        image = get_hcho_image()
 
-    return jsonify({
-        "tile_url": map_id["tile_fetcher"].url_format
-    })
+        vis = {
+            "min": 0.00005,
+            "max": 0.0004,
+            "palette": ["blue", "cyan", "green", "yellow", "orange", "red"]
+        }
+
+        map_id = image.getMapId(vis)
+        tile_url = map_id["tile_fetcher"].url_format
+
+        HCHO_TILE_CACHE = tile_url
+
+        return jsonify({
+            "source": "earth_engine",
+            "tile_url": tile_url
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 
 @app.route("/get_hcho_value")
@@ -100,11 +123,22 @@ def get_hcho_value():
 
 @app.route("/get_hcho_hotspots")
 def get_hcho_hotspots():
+    global HCHO_HOTSPOT_CACHE
+
     try:
+        hotspot_threshold = 0.00025
+
+        if HCHO_HOTSPOT_CACHE is not None:
+            return jsonify({
+                "source": "cache",
+                "count": len(HCHO_HOTSPOT_CACHE),
+                "threshold": hotspot_threshold,
+                "hotspots": HCHO_HOTSPOT_CACHE
+            })
+
         india = get_india_boundary().geometry()
         image = get_hcho_image()
 
-        hotspot_threshold = 0.00025
         hotspot_mask = image.gt(hotspot_threshold)
 
         hotspot_points = image.updateMask(hotspot_mask).sample(
@@ -130,7 +164,10 @@ def get_hcho_hotspots():
                 "risk": classify_hcho(hcho_value)
             })
 
+        HCHO_HOTSPOT_CACHE = hotspots
+
         return jsonify({
+            "source": "earth_engine",
             "count": len(hotspots),
             "threshold": hotspot_threshold,
             "hotspots": hotspots
@@ -140,6 +177,19 @@ def get_hcho_hotspots():
         return jsonify({
             "error": str(e)
         }), 500
+
+
+@app.route("/clear_cache")
+def clear_cache():
+    global HCHO_TILE_CACHE
+    global HCHO_HOTSPOT_CACHE
+
+    HCHO_TILE_CACHE = None
+    HCHO_HOTSPOT_CACHE = None
+
+    return jsonify({
+        "status": "cache cleared"
+    })
 
 
 if __name__ == "__main__":
