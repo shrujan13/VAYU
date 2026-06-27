@@ -12,6 +12,39 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(window.vayuMap);
 
 
+// Status panel
+const statusPanel = L.control({ position: "topleft" });
+
+statusPanel.onAdd = function () {
+    const div = L.DomUtil.create("div", "status-panel");
+
+    div.innerHTML = `
+        <h4>VAYU Status</h4>
+        <div>HCHO Layer: Loading...</div>
+        <div>Hotspots: Loading...</div>
+        <div>Threshold: Loading...</div>
+    `;
+
+    return div;
+};
+
+statusPanel.addTo(window.vayuMap);
+
+
+function updateStatusPanel(layerStatus, count, threshold) {
+    const panel = document.querySelector(".status-panel");
+
+    if (panel) {
+        panel.innerHTML = `
+            <h4>VAYU Status</h4>
+            <div>HCHO Layer: ${layerStatus}</div>
+            <div>Hotspots Detected: ${count}</div>
+            <div>Threshold: ${threshold}</div>
+        `;
+    }
+}
+
+
 // Load HCHO satellite layer from Flask backend
 fetch("http://127.0.0.1:5000/get_hcho_tile")
     .then(response => response.json())
@@ -24,9 +57,12 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
             attribution: "Google Earth Engine | Sentinel-5P HCHO"
         }).addTo(window.vayuMap);
 
+        updateStatusPanel("Active", "Loading...", "Loading...");
+
     })
     .catch(error => {
         console.error("Error loading HCHO layer:", error);
+        updateStatusPanel("Error", "Loading...", "Loading...");
     });
 
 
@@ -44,6 +80,8 @@ function loadHchoHotspots() {
             console.log("HCHO Hotspots:", data);
 
             hotspotLayer.clearLayers();
+
+            updateStatusPanel("Active", data.count, data.threshold);
 
             if (!data.hotspots || data.hotspots.length === 0) {
                 console.log("No HCHO hotspots found");
@@ -77,6 +115,7 @@ function loadHchoHotspots() {
         })
         .catch(error => {
             console.error("Error loading HCHO hotspots:", error);
+            updateStatusPanel("Active", "Error", "Error");
         });
 }
 
