@@ -29,25 +29,53 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
     });
 
 
-// Click location popup
+// Click location popup with real HCHO value
 window.vayuMap.on("click", function (event) {
 
     const lat = event.latlng.lat.toFixed(5);
     const lon = event.latlng.lng.toFixed(5);
 
-    L.popup()
+    const popup = L.popup()
         .setLatLng(event.latlng)
-        .setContent(
-            `
+        .setContent(`
             <b>VAYU Location Data</b><br>
             Latitude: ${lat}<br>
             Longitude: ${lon}<br>
-            HCHO: Coming soon<br>
-            AQI: Coming soon<br>
-            Risk: Under analysis
-            `
-        )
+            HCHO: Loading...<br>
+            Risk: Analyzing...
+        `)
         .openOn(window.vayuMap);
+
+    fetch(`http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`)
+        .then(response => response.json())
+        .then(data => {
+
+            let hchoText = "No data";
+
+            if (data.hcho !== null && data.hcho !== undefined) {
+                hchoText = Number(data.hcho).toExponential(3);
+            }
+
+            popup.setContent(`
+                <b>VAYU Location Data</b><br>
+                Latitude: ${lat}<br>
+                Longitude: ${lon}<br>
+                HCHO: ${hchoText}<br>
+                Risk: ${data.risk}<br>
+                AQI: Coming soon
+            `);
+        })
+        .catch(error => {
+            console.error("Error loading HCHO value:", error);
+
+            popup.setContent(`
+                <b>VAYU Location Data</b><br>
+                Latitude: ${lat}<br>
+                Longitude: ${lon}<br>
+                HCHO: Error loading data<br>
+                Risk: Unknown
+            `);
+        });
 });
 
 
