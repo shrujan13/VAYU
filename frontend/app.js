@@ -19,7 +19,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(window.vayuMap);
 
 
-// Helper function to format HCHO value
+// Format HCHO value
 function formatHchoValue(value) {
     if (value !== null && value !== undefined) {
         return Number(value).toExponential(3);
@@ -29,7 +29,17 @@ function formatHchoValue(value) {
 }
 
 
-// Show HCHO data popup for any location
+// Format normal pollutant value
+function formatPollutantValue(value) {
+    if (value !== null && value !== undefined) {
+        return Number(value).toFixed(2);
+    }
+
+    return "No data";
+}
+
+
+// Show HCHO + AQI data popup for any location
 function showLocationData(lat, lon, title, addressText) {
 
     const popup = L.popup()
@@ -40,36 +50,71 @@ function showLocationData(lat, lon, title, addressText) {
             Latitude: ${lat.toFixed(5)}<br>
             Longitude: ${lon.toFixed(5)}<br>
             HCHO: Loading...<br>
+            AQI: Loading...<br>
             Risk: Analyzing...
         `)
         .openOn(window.vayuMap);
 
-    fetch(`http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`)
-        .then(response => response.json())
-        .then(data => {
+    const hchoUrl = `http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`;
+    const aqiUrl = `http://127.0.0.1:5000/get_aqi_value?lat=${lat}&lon=${lon}`;
 
-            const hchoText = formatHchoValue(data.hcho);
+    Promise.all([
+        fetch(hchoUrl).then(response => response.json()),
+        fetch(aqiUrl).then(response => response.json())
+    ])
+        .then(([hchoData, aqiData]) => {
+
+            const hchoText = formatHchoValue(hchoData.hcho);
+
+            const pollutants = aqiData.pollutants || {};
 
             popup.setContent(`
                 <b>${title}</b><br>
                 ${addressText ? addressText + "<br>" : ""}
+                <hr>
+
+                <b>Location</b><br>
                 Latitude: ${lat.toFixed(5)}<br>
                 Longitude: ${lon.toFixed(5)}<br>
+
+                <hr>
+
+                <b>HCHO Satellite Data</b><br>
                 HCHO: ${hchoText}<br>
-                Risk: ${data.risk}<br>
-                AQI: Coming soon
+                HCHO Risk: ${hchoData.risk}<br>
+
+                <hr>
+
+                <b>AQI Ground-Level Estimate</b><br>
+                AQI: ${aqiData.aqi}<br>
+                Category: ${aqiData.category}<br>
+                Time: ${aqiData.time}<br>
+
+                <hr>
+
+                <b>Pollutants</b><br>
+                PM2.5: ${formatPollutantValue(pollutants.pm2_5)} µg/m³<br>
+                PM10: ${formatPollutantValue(pollutants.pm10)} µg/m³<br>
+                NO₂: ${formatPollutantValue(pollutants.nitrogen_dioxide)} µg/m³<br>
+                SO₂: ${formatPollutantValue(pollutants.sulphur_dioxide)} µg/m³<br>
+                CO: ${formatPollutantValue(pollutants.carbon_monoxide)} µg/m³<br>
+                O₃: ${formatPollutantValue(pollutants.ozone)} µg/m³<br>
+
+                <hr>
+
+                <b>Advisory</b><br>
+                ${aqiData.advisory}
             `);
         })
         .catch(error => {
-            console.error("Error loading HCHO value:", error);
+            console.error("Error loading location data:", error);
 
             popup.setContent(`
                 <b>${title}</b><br>
                 ${addressText ? addressText + "<br>" : ""}
                 Latitude: ${lat.toFixed(5)}<br>
                 Longitude: ${lon.toFixed(5)}<br>
-                HCHO: Error loading data<br>
-                Risk: Unknown
+                Data loading failed
             `);
         });
 }
@@ -130,7 +175,7 @@ searchPanel.onAdd = function () {
 searchPanel.addTo(window.vayuMap);
 
 
-// Search any Indian city using OpenStreetMap and directly show HCHO value
+// Search any Indian city using OpenStreetMap and directly show HCHO + AQI value
 function searchCity() {
     const input = document.getElementById("cityInput");
     const message = document.getElementById("citySearchMessage");
@@ -279,7 +324,7 @@ function loadHchoHotspots() {
 loadHchoHotspots();
 
 
-// Click location popup with real HCHO value
+// Click location popup with real HCHO + AQI value
 window.vayuMap.on("click", function (event) {
 
     const lat = event.latlng.lat;
