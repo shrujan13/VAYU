@@ -3,6 +3,13 @@ if (window.vayuMap) {
     window.vayuMap.remove();
 }
 
+// App status memory
+const vayuStatus = {
+    hchoLayer: "Loading...",
+    hotspotsCount: "Loading...",
+    threshold: "Loading..."
+};
+
 // Create map
 window.vayuMap = L.map("map").setView([22.5, 79], 5);
 
@@ -10,6 +17,62 @@ window.vayuMap = L.map("map").setView([22.5, 79], 5);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap"
 }).addTo(window.vayuMap);
+
+
+// Helper function to format HCHO value
+function formatHchoValue(value) {
+    if (value !== null && value !== undefined) {
+        return Number(value).toExponential(3);
+    }
+
+    return "No data";
+}
+
+
+// Show HCHO data popup for any location
+function showLocationData(lat, lon, title, addressText) {
+
+    const popup = L.popup()
+        .setLatLng([lat, lon])
+        .setContent(`
+            <b>${title}</b><br>
+            ${addressText ? addressText + "<br>" : ""}
+            Latitude: ${lat.toFixed(5)}<br>
+            Longitude: ${lon.toFixed(5)}<br>
+            HCHO: Loading...<br>
+            Risk: Analyzing...
+        `)
+        .openOn(window.vayuMap);
+
+    fetch(`http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`)
+        .then(response => response.json())
+        .then(data => {
+
+            const hchoText = formatHchoValue(data.hcho);
+
+            popup.setContent(`
+                <b>${title}</b><br>
+                ${addressText ? addressText + "<br>" : ""}
+                Latitude: ${lat.toFixed(5)}<br>
+                Longitude: ${lon.toFixed(5)}<br>
+                HCHO: ${hchoText}<br>
+                Risk: ${data.risk}<br>
+                AQI: Coming soon
+            `);
+        })
+        .catch(error => {
+            console.error("Error loading HCHO value:", error);
+
+            popup.setContent(`
+                <b>${title}</b><br>
+                ${addressText ? addressText + "<br>" : ""}
+                Latitude: ${lat.toFixed(5)}<br>
+                Longitude: ${lon.toFixed(5)}<br>
+                HCHO: Error loading data<br>
+                Risk: Unknown
+            `);
+        });
+}
 
 
 // Status panel
@@ -20,9 +83,9 @@ statusPanel.onAdd = function () {
 
     div.innerHTML = `
         <h4>VAYU Status</h4>
-        <div>HCHO Layer: Loading...</div>
-        <div>Hotspots: Loading...</div>
-        <div>Threshold: Loading...</div>
+        <div>HCHO Layer: ${vayuStatus.hchoLayer}</div>
+        <div>Hotspots Detected: ${vayuStatus.hotspotsCount}</div>
+        <div>Threshold: ${vayuStatus.threshold}</div>
     `;
 
     return div;
@@ -31,18 +94,108 @@ statusPanel.onAdd = function () {
 statusPanel.addTo(window.vayuMap);
 
 
-function updateStatusPanel(layerStatus, count, threshold) {
+function renderStatusPanel() {
     const panel = document.querySelector(".status-panel");
 
     if (panel) {
         panel.innerHTML = `
             <h4>VAYU Status</h4>
-            <div>HCHO Layer: ${layerStatus}</div>
-            <div>Hotspots Detected: ${count}</div>
-            <div>Threshold: ${threshold}</div>
+            <div>HCHO Layer: ${vayuStatus.hchoLayer}</div>
+            <div>Hotspots Detected: ${vayuStatus.hotspotsCount}</div>
+            <div>Threshold: ${vayuStatus.threshold}</div>
         `;
     }
 }
+
+
+// Search panel
+const searchPanel = L.control({ position: "topright" });
+
+searchPanel.onAdd = function () {
+    const div = L.DomUtil.create("div", "search-panel");
+
+    div.innerHTML = `
+        <h4>Search City</h4>
+        <input id="cityInput" type="text" placeholder="Enter any Indian city">
+        <button id="citySearchButton">Search</button>
+        <div id="citySearchMessage"></div>
+    `;
+
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+
+    return div;
+};
+
+searchPanel.addTo(window.vayuMap);
+
+
+// Search any Indian city using OpenStreetMap and directly show HCHO value
+function searchCity() {
+    const input = document.getElementById("cityInput");
+    const message = document.getElementById("citySearchMessage");
+
+    const cityName = input.value.trim();
+
+    if (cityName === "") {
+        message.innerHTML = "Enter a city name";
+        return;
+    }
+
+    message.innerHTML = "Searching...";
+
+    const searchUrl =
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=${encodeURIComponent(cityName)}`;
+
+    fetch(searchUrl)
+        .then(response => response.json())
+        .then(results => {
+
+            if (!results || results.length === 0) {
+                message.innerHTML = "City not found";
+                return;
+            }
+
+            const place = results[0];
+
+            const lat = parseFloat(place.lat);
+            const lon = parseFloat(place.lon);
+            const address = place.display_name;
+
+            window.vayuMap.setView([lat, lon], 10);
+
+            message.innerHTML = "City found";
+
+            showLocationData(
+                lat,
+                lon,
+                cityName,
+                address
+            );
+        })
+        .catch(error => {
+            console.error("City search error:", error);
+            message.innerHTML = "Search failed";
+        });
+}
+
+
+setTimeout(function () {
+    const button = document.getElementById("citySearchButton");
+    const input = document.getElementById("cityInput");
+
+    button.addEventListener("click", searchCity);
+
+    input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            searchCity();
+        }
+    });
+}, 500);
+
+
+// Hotspot marker layer
+const hotspotLayer = L.layerGroup().addTo(window.vayuMap);
 
 
 // Load HCHO satellite layer from Flask backend
@@ -57,21 +210,24 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
             attribution: "Google Earth Engine | Sentinel-5P HCHO"
         }).addTo(window.vayuMap);
 
-        updateStatusPanel("Active", "Loading...", "Loading...");
+        vayuStatus.hchoLayer = "Active";
+        renderStatusPanel();
 
     })
     .catch(error => {
         console.error("Error loading HCHO layer:", error);
-        updateStatusPanel("Error", "Loading...", "Loading...");
+
+        vayuStatus.hchoLayer = "Error";
+        renderStatusPanel();
     });
-
-
-// Hotspot marker layer
-const hotspotLayer = L.layerGroup().addTo(window.vayuMap);
 
 
 // Load automatic HCHO hotspots
 function loadHchoHotspots() {
+
+    vayuStatus.hotspotsCount = "Loading...";
+    vayuStatus.threshold = "Loading...";
+    renderStatusPanel();
 
     fetch("http://127.0.0.1:5000/get_hcho_hotspots")
         .then(response => response.json())
@@ -81,7 +237,9 @@ function loadHchoHotspots() {
 
             hotspotLayer.clearLayers();
 
-            updateStatusPanel("Active", data.count, data.threshold);
+            vayuStatus.hotspotsCount = data.count;
+            vayuStatus.threshold = data.threshold;
+            renderStatusPanel();
 
             if (!data.hotspots || data.hotspots.length === 0) {
                 console.log("No HCHO hotspots found");
@@ -90,11 +248,7 @@ function loadHchoHotspots() {
 
             data.hotspots.forEach(point => {
 
-                let hchoText = "No data";
-
-                if (point.hcho !== null && point.hcho !== undefined) {
-                    hchoText = Number(point.hcho).toExponential(3);
-                }
+                const hchoText = formatHchoValue(point.hcho);
 
                 L.circleMarker([point.lat, point.lon], {
                     radius: 9,
@@ -115,7 +269,10 @@ function loadHchoHotspots() {
         })
         .catch(error => {
             console.error("Error loading HCHO hotspots:", error);
-            updateStatusPanel("Active", "Error", "Error");
+
+            vayuStatus.hotspotsCount = "Error";
+            vayuStatus.threshold = "Error";
+            renderStatusPanel();
         });
 }
 
@@ -125,50 +282,15 @@ loadHchoHotspots();
 // Click location popup with real HCHO value
 window.vayuMap.on("click", function (event) {
 
-    const lat = event.latlng.lat.toFixed(5);
-    const lon = event.latlng.lng.toFixed(5);
+    const lat = event.latlng.lat;
+    const lon = event.latlng.lng;
 
-    const popup = L.popup()
-        .setLatLng(event.latlng)
-        .setContent(`
-            <b>VAYU Location Data</b><br>
-            Latitude: ${lat}<br>
-            Longitude: ${lon}<br>
-            HCHO: Loading...<br>
-            Risk: Analyzing...
-        `)
-        .openOn(window.vayuMap);
-
-    fetch(`http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`)
-        .then(response => response.json())
-        .then(data => {
-
-            let hchoText = "No data";
-
-            if (data.hcho !== null && data.hcho !== undefined) {
-                hchoText = Number(data.hcho).toExponential(3);
-            }
-
-            popup.setContent(`
-                <b>VAYU Location Data</b><br>
-                Latitude: ${lat}<br>
-                Longitude: ${lon}<br>
-                HCHO: ${hchoText}<br>
-                Risk: ${data.risk}<br>
-                AQI: Coming soon
-            `);
-        })
-        .catch(error => {
-            console.error("Error loading HCHO value:", error);
-
-            popup.setContent(`
-                <b>VAYU Location Data</b><br>
-                Latitude: ${lat}<br>
-                Longitude: ${lon}<br>
-                HCHO: Error loading data<br>
-                Risk: Unknown
-            `);
-        });
+    showLocationData(
+        lat,
+        lon,
+        "VAYU Location Data",
+        ""
+    );
 });
 
 
