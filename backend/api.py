@@ -49,7 +49,6 @@ def home():
 
 @app.route("/get_hcho_tile")
 def get_hcho_tile():
-
     image = get_hcho_image()
 
     vis = {
@@ -67,15 +66,11 @@ def get_hcho_tile():
 
 @app.route("/get_hcho_value")
 def get_hcho_value():
-
     try:
         lat = float(request.args.get("lat"))
         lon = float(request.args.get("lon"))
 
         point = ee.Geometry.Point([lon, lat])
-
-        # Sentinel-5P data is not tiny street-level data,
-        # so we take average around 10 km area.
         area = point.buffer(10000)
 
         image = get_hcho_image()
@@ -95,6 +90,50 @@ def get_hcho_value():
             "lon": lon,
             "hcho": value,
             "risk": risk
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+@app.route("/get_hcho_hotspots")
+def get_hcho_hotspots():
+    try:
+        india = get_india_boundary().geometry()
+        image = get_hcho_image()
+
+        hotspot_threshold = 0.00025
+        hotspot_mask = image.gt(hotspot_threshold)
+
+        hotspot_points = image.updateMask(hotspot_mask).sample(
+            region=india,
+            scale=25000,
+            numPixels=30,
+            seed=42,
+            geometries=True
+        ).getInfo()
+
+        hotspots = []
+
+        for feature in hotspot_points["features"]:
+            coords = feature["geometry"]["coordinates"]
+            properties = feature["properties"]
+
+            hcho_value = properties.get("tropospheric_HCHO_column_number_density")
+
+            hotspots.append({
+                "lat": coords[1],
+                "lon": coords[0],
+                "hcho": hcho_value,
+                "risk": classify_hcho(hcho_value)
+            })
+
+        return jsonify({
+            "count": len(hotspots),
+            "threshold": hotspot_threshold,
+            "hotspots": hotspots
         })
 
     except Exception as e:

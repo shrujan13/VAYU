@@ -11,7 +11,8 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap"
 }).addTo(window.vayuMap);
 
-// Load HCHO layer from Flask backend
+
+// Load HCHO satellite layer from Flask backend
 fetch("http://127.0.0.1:5000/get_hcho_tile")
     .then(response => response.json())
     .then(data => {
@@ -27,6 +28,59 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
     .catch(error => {
         console.error("Error loading HCHO layer:", error);
     });
+
+
+// Hotspot marker layer
+const hotspotLayer = L.layerGroup().addTo(window.vayuMap);
+
+
+// Load automatic HCHO hotspots
+function loadHchoHotspots() {
+
+    fetch("http://127.0.0.1:5000/get_hcho_hotspots")
+        .then(response => response.json())
+        .then(data => {
+
+            console.log("HCHO Hotspots:", data);
+
+            hotspotLayer.clearLayers();
+
+            if (!data.hotspots || data.hotspots.length === 0) {
+                console.log("No HCHO hotspots found");
+                return;
+            }
+
+            data.hotspots.forEach(point => {
+
+                let hchoText = "No data";
+
+                if (point.hcho !== null && point.hcho !== undefined) {
+                    hchoText = Number(point.hcho).toExponential(3);
+                }
+
+                L.circleMarker([point.lat, point.lon], {
+                    radius: 9,
+                    color: "red",
+                    fillColor: "red",
+                    fillOpacity: 0.85,
+                    weight: 2
+                })
+                    .bindPopup(`
+                        <b>HCHO Hotspot</b><br>
+                        Latitude: ${point.lat.toFixed(4)}<br>
+                        Longitude: ${point.lon.toFixed(4)}<br>
+                        HCHO: ${hchoText}<br>
+                        Risk: ${point.risk}
+                    `)
+                    .addTo(hotspotLayer);
+            });
+        })
+        .catch(error => {
+            console.error("Error loading HCHO hotspots:", error);
+        });
+}
+
+loadHchoHotspots();
 
 
 // Click location popup with real HCHO value
