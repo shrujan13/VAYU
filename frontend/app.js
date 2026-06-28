@@ -6,8 +6,11 @@ if (window.vayuMap) {
 // App status memory
 const vayuStatus = {
     hchoLayer: "Loading...",
-    hotspotsCount: "Loading...",
-    threshold: "Loading..."
+    hotspotStatus: "Starting...",
+    hotspotsCount: "Scanning...",
+    threshold: "Loading...",
+    dataWindow: "Loading...",
+    message: "Initializing VAYU satellite services..."
 };
 
 // Create map
@@ -318,48 +321,15 @@ function createAqiForecastChart(forecast) {
             role="img"
             xmlns="http://www.w3.org/2000/svg">
 
-            <rect
-                x="0"
-                y="0"
-                width="${width}"
-                height="${height}"
-                rx="10"
-                fill="#f8fbff">
-            </rect>
+            <rect x="0" y="0" width="${width}" height="${height}" rx="10" fill="#f8fbff"></rect>
 
-            <line
-                x1="${paddingLeft}"
-                y1="${paddingTop}"
-                x2="${paddingLeft}"
-                y2="${paddingTop + chartHeight}"
-                stroke="#cfd8e3"
-                stroke-width="1">
-            </line>
+            <line x1="${paddingLeft}" y1="${paddingTop}" x2="${paddingLeft}" y2="${paddingTop + chartHeight}" stroke="#cfd8e3" stroke-width="1"></line>
 
-            <line
-                x1="${paddingLeft}"
-                y1="${paddingTop + chartHeight}"
-                x2="${paddingLeft + chartWidth}"
-                y2="${paddingTop + chartHeight}"
-                stroke="#cfd8e3"
-                stroke-width="1">
-            </line>
+            <line x1="${paddingLeft}" y1="${paddingTop + chartHeight}" x2="${paddingLeft + chartWidth}" y2="${paddingTop + chartHeight}" stroke="#cfd8e3" stroke-width="1"></line>
 
-            <text
-                x="8"
-                y="${paddingTop + 5}"
-                font-size="10"
-                fill="#526174">
-                ${maxValue}
-            </text>
+            <text x="8" y="${paddingTop + 5}" font-size="10" fill="#526174">${maxValue}</text>
 
-            <text
-                x="8"
-                y="${paddingTop + chartHeight}"
-                font-size="10"
-                fill="#526174">
-                ${minValue}
-            </text>
+            <text x="8" y="${paddingTop + chartHeight}" font-size="10" fill="#526174">${minValue}</text>
 
             <polyline
                 points="${polylinePoints}"
@@ -372,21 +342,9 @@ function createAqiForecastChart(forecast) {
 
             ${circles}
 
-            <text
-                x="${paddingLeft}"
-                y="${height - 9}"
-                font-size="10"
-                fill="#526174">
-                ${firstTime}
-            </text>
+            <text x="${paddingLeft}" y="${height - 9}" font-size="10" fill="#526174">${firstTime}</text>
 
-            <text
-                x="${paddingLeft + chartWidth - 35}"
-                y="${height - 9}"
-                font-size="10"
-                fill="#526174">
-                ${lastTime}
-            </text>
+            <text x="${paddingLeft + chartWidth - 35}" y="${height - 9}" font-size="10" fill="#526174">${lastTime}</text>
         </svg>
     `;
 }
@@ -473,14 +431,6 @@ const statusPanel = L.control({ position: "topleft" });
 
 statusPanel.onAdd = function () {
     const div = L.DomUtil.create("div", "status-panel");
-
-    div.innerHTML = `
-        <h4>VAYU Status</h4>
-        <div>HCHO Layer: ${vayuStatus.hchoLayer}</div>
-        <div>Hotspots Detected: ${vayuStatus.hotspotsCount}</div>
-        <div>Threshold: ${vayuStatus.threshold}</div>
-    `;
-
     return div;
 };
 
@@ -494,11 +444,16 @@ function renderStatusPanel() {
         panel.innerHTML = `
             <h4>VAYU Status</h4>
             <div>HCHO Layer: ${vayuStatus.hchoLayer}</div>
+            <div>Hotspot Scan: ${vayuStatus.hotspotStatus}</div>
             <div>Hotspots Detected: ${vayuStatus.hotspotsCount}</div>
             <div>Threshold: ${vayuStatus.threshold}</div>
+            <div class="small-text">Window: ${vayuStatus.dataWindow}</div>
+            <div class="small-text">${vayuStatus.message}</div>
         `;
     }
 }
+
+renderStatusPanel();
 
 
 // Search panel
@@ -586,7 +541,11 @@ function showLocationData(lat, lon, title, addressText) {
     setReportPanelContent(`
         <h3>VAYU Environmental Report</h3>
         <div class="loading-box">
-            Loading satellite, AQI, weather, and forecast data...
+            <b>Generating report...</b><br>
+            Fetching AQI, pollutants, weather, forecast, and latest satellite HCHO data.
+            <br><br>
+            Satellite HCHO may take 20-40 seconds on first request because Earth Engine is processing latest Sentinel-5P data.
+            Cached locations will load faster.
         </div>
     `);
 
@@ -621,6 +580,10 @@ function showLocationData(lat, lon, title, addressText) {
                 Full report shown in panel.
             `);
 
+            const hchoWindowText = hchoData.start_date && hchoData.end_date
+                ? `${hchoData.start_date} to ${hchoData.end_date}`
+                : "Latest available rolling window";
+
             setReportPanelContent(`
                 <h3>VAYU Environmental Report</h3>
 
@@ -633,6 +596,14 @@ function showLocationData(lat, lon, title, addressText) {
                     <div><b>${title}</b></div>
                     ${addressText ? `<div class="small-text">${addressText}</div>` : ""}
                     <div class="small-text">Lat: ${lat.toFixed(5)} | Lon: ${lon.toFixed(5)}</div>
+                </div>
+
+                <div class="report-section">
+                    <h4>Data Sources</h4>
+                    <div class="data-row"><span>HCHO Source</span><b>${hchoData.hcho_source || "Sentinel-5P NRTI HCHO"}</b></div>
+                    <div class="data-row"><span>HCHO Window</span><b>${hchoWindowText}</b></div>
+                    <div class="data-row"><span>AQI Source</span><b>${aqiData.source || "Open-Meteo Air Quality"}</b></div>
+                    <div class="data-row"><span>Weather Source</span><b>${weatherData.source || "Open-Meteo Forecast"}</b></div>
                 </div>
 
                 <div class="report-section">
@@ -807,6 +778,8 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
         }).addTo(window.vayuMap);
 
         vayuStatus.hchoLayer = "Active";
+        vayuStatus.dataWindow = `${data.start_date} to ${data.end_date}`;
+        vayuStatus.message = "HCHO layer loaded using latest available Sentinel-5P data.";
         renderStatusPanel();
 
     })
@@ -814,60 +787,125 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
         console.error("Error loading HCHO layer:", error);
 
         vayuStatus.hchoLayer = "Error";
+        vayuStatus.message = "HCHO layer failed to load.";
         renderStatusPanel();
     });
 
 
-// Load HCHO hotspots
-function loadHchoHotspots() {
+// Render hotspot markers
+function renderHotspotMarkers(hotspots) {
+    hotspotLayer.clearLayers();
 
-    vayuStatus.hotspotsCount = "Loading...";
-    vayuStatus.threshold = "Loading...";
-    renderStatusPanel();
+    if (!hotspots || hotspots.length === 0) {
+        return;
+    }
 
+    hotspots.forEach(point => {
+
+        const hchoText = formatHchoValue(point.hcho);
+
+        L.circleMarker([point.lat, point.lon], {
+            radius: 9,
+            color: "red",
+            fillColor: "red",
+            fillOpacity: 0.85,
+            weight: 2
+        })
+            .bindPopup(`
+                <b>HCHO Hotspot</b><br>
+                Latitude: ${point.lat.toFixed(4)}<br>
+                Longitude: ${point.lon.toFixed(4)}<br>
+                HCHO: ${hchoText}<br>
+                Risk: ${point.risk}
+            `)
+            .addTo(hotspotLayer);
+    });
+}
+
+
+// Poll hotspot scan status
+function pollHchoHotspots() {
     fetch("http://127.0.0.1:5000/get_hcho_hotspots")
         .then(response => response.json())
         .then(data => {
 
-            console.log("HCHO Hotspots:", data);
+            console.log("HCHO Hotspot Status:", data);
 
-            hotspotLayer.clearLayers();
-
-            vayuStatus.hotspotsCount = data.count;
             vayuStatus.threshold = data.threshold;
-            renderStatusPanel();
+            vayuStatus.dataWindow = `${data.start_date} to ${data.end_date}`;
 
-            if (!data.hotspots || data.hotspots.length === 0) {
-                console.log("No HCHO hotspots found");
+            if (data.status === "ready") {
+                vayuStatus.hotspotStatus = "Completed";
+                vayuStatus.hotspotsCount = data.count;
+                vayuStatus.message = data.message || "Hotspot scan completed.";
+                renderHotspotMarkers(data.hotspots);
+                renderStatusPanel();
                 return;
             }
 
-            data.hotspots.forEach(point => {
+            if (data.status === "scanning") {
+                vayuStatus.hotspotStatus = "Scanning...";
+                vayuStatus.hotspotsCount = "In progress";
+                vayuStatus.message = data.message || "Satellite hotspot scan is in progress.";
+                renderStatusPanel();
 
-                const hchoText = formatHchoValue(point.hcho);
+                setTimeout(pollHchoHotspots, 10000);
+                return;
+            }
 
-                L.circleMarker([point.lat, point.lon], {
-                    radius: 9,
-                    color: "red",
-                    fillColor: "red",
-                    fillOpacity: 0.85,
-                    weight: 2
-                })
-                    .bindPopup(`
-                        <b>HCHO Hotspot</b><br>
-                        Latitude: ${point.lat.toFixed(4)}<br>
-                        Longitude: ${point.lon.toFixed(4)}<br>
-                        HCHO: ${hchoText}<br>
-                        Risk: ${point.risk}
-                    `)
-                    .addTo(hotspotLayer);
-            });
+            if (data.status === "error") {
+                vayuStatus.hotspotStatus = "Error";
+                vayuStatus.hotspotsCount = "Unavailable";
+                vayuStatus.message = data.message || "Hotspot scan failed.";
+                renderStatusPanel();
+                return;
+            }
+
+            vayuStatus.hotspotStatus = "Waiting...";
+            vayuStatus.hotspotsCount = "Starting";
+            vayuStatus.message = "Preparing hotspot scan.";
+            renderStatusPanel();
+
+            setTimeout(pollHchoHotspots, 5000);
         })
         .catch(error => {
             console.error("Error loading HCHO hotspots:", error);
 
-            vayuStatus.hotspotsCount = "Error";
-            vayuStatus.threshold = "Error";
+            vayuStatus.hotspotStatus = "Error";
+            vayuStatus.hotspotsCount = "Unavailable";
+            vayuStatus.message = "Could not contact backend for hotspot scan.";
+            renderStatusPanel();
+        });
+}
+
+
+// Start hotspot background scan
+function loadHchoHotspots() {
+    vayuStatus.hotspotStatus = "Starting...";
+    vayuStatus.hotspotsCount = "Scanning...";
+    vayuStatus.message = "Starting background hotspot scan. Dashboard will remain usable.";
+    renderStatusPanel();
+
+    fetch("http://127.0.0.1:5000/start_hcho_hotspot_scan")
+        .then(response => response.json())
+        .then(data => {
+            console.log("Started Hotspot Scan:", data);
+
+            vayuStatus.hotspotStatus = "Scanning...";
+            vayuStatus.hotspotsCount = "In progress";
+            vayuStatus.threshold = data.threshold;
+            vayuStatus.dataWindow = `${data.start_date} to ${data.end_date}`;
+            vayuStatus.message = data.message || "Satellite hotspot scan is in progress.";
+            renderStatusPanel();
+
+            pollHchoHotspots();
+        })
+        .catch(error => {
+            console.error("Error starting hotspot scan:", error);
+
+            vayuStatus.hotspotStatus = "Error";
+            vayuStatus.hotspotsCount = "Unavailable";
+            vayuStatus.message = "Could not start hotspot scan.";
             renderStatusPanel();
         });
 }

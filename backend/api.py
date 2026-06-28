@@ -4,16 +4,47 @@ import ee
 import json
 import urllib.request
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
+import threading
 
 app = Flask(__name__)
 CORS(app)
 
 ee.Initialize(project="vayu-500508")
 
-HCHO_TILE_CACHE = None
-HCHO_HOTSPOT_CACHE = None
+# -----------------------------
+# HCHO SETTINGS
+# -----------------------------
 
+HCHO_DATASET_ID = "COPERNICUS/S5P/NRTI/L3_HCHO"
+HCHO_BAND = "tropospheric_HCHO_column_number_density"
+
+HCHO_ROLLING_DAYS = 14
+HCHO_MAX_CLOUD_FRACTION = 0.5
+
+HCHO_POINT_BUFFER_METERS = 20000
+HCHO_POINT_SCALE = 25000
+
+HCHO_HOTSPOT_THRESHOLD = 0.00025
+HCHO_HOTSPOT_SCALE = 75000
+HCHO_HOTSPOT_NUM_PIXELS = 20
+
+# Cache variables
+HCHO_TILE_CACHE = None
+HCHO_IMAGE_CACHE = None
+HCHO_VALUE_CACHE = {}
+
+HCHO_HOTSPOT_CACHE = []
+HOTSPOT_SCAN_STATUS = "idle"
+HOTSPOT_SCAN_MESSAGE = "Hotspot scan has not started."
+HOTSPOT_SCAN_STARTED_AT = None
+HOTSPOT_SCAN_FINISHED_AT = None
+HOTSPOT_SCAN_ERROR = None
+
+
+# -----------------------------
+# GENERAL HELPERS
+# -----------------------------
 
 def fetch_json_from_url(url):
     with urllib.request.urlopen(url, timeout=20) as response:
@@ -26,31 +57,96 @@ def get_india_boundary():
         .filter(ee.Filter.eq("ADM0_NAME", "India"))
 
 
-def get_hcho_image():
-    india = get_india_boundary()
+def get_hcho_date_window():
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=HCHO_ROLLING_DAYS)
+    filter_end_date = end_date + timedelta(days=1)
 
-    return ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_HCHO") \
-        .filterDate("2025-06-01", "2025-06-20") \
-        .select("tropospheric_HCHO_column_number_density") \
-        .mean() \
-        .clip(india)
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "filter_end_date": filter_end_date.isoformat(),
+        "rolling_days": HCHO_ROLLING_DAYS
+    }
+
+
+def mask_hcho_clouds(image):
+    hcho = image.select(HCHO_BAND)
+    cloud_fraction = image.select("cloud_fraction")
+
+    return hcho.updateMask(cloud_fraction.lte(HCHO_MAX_CLOUD_FRACTION)) \
+        .copyProperties(image, image.propertyNames())
+
+
+def get_hcho_collection(region=None):
+    india = get_india_boundary()
+    date_window = get_hcho_date_window()
+
+    if region is None:
+        bounds = india
+    else:
+        bounds = region
+
+    collection = ee.ImageCollection(HCHO_DATASET_ID) \
+        .filterDate(date_window["start_date"], date_window["filter_end_date"]) \
+        .filterBounds(bounds) \
+        .map(mask_hcho_clouds)
+
+    return collection
+
+
+def get_hcho_image(region=None):
+    global HCHO_IMAGE_CACHE
+
+    if region is None and HCHO_IMAGE_CACHE is not None:
+        return HCHO_IMAGE_CACHE
+
+    collection = get_hcho_collection(region)
+
+    # Latest valid pixel composite from the 14-day rolling window
+    image = collection.sort("system:time_start").mosaic()
+
+    if region is None:
+        india = get_india_boundary()
+        image = image.clip(india)
+        HCHO_IMAGE_CACHE = image
+
+    return image
+
+
+def get_hcho_metadata(source_type):
+    date_window = get_hcho_date_window()
+
+    return {
+        "hcho_source": "Sentinel-5P NRTI HCHO",
+        "dataset_id": HCHO_DATASET_ID,
+        "data_type": "near-real-time latest valid pixel composite",
+        "rolling_days": date_window["rolling_days"],
+        "start_date": date_window["start_date"],
+        "end_date": date_window["end_date"],
+        "cloud_fraction_filter": f"<= {HCHO_MAX_CLOUD_FRACTION}",
+        "source": source_type
+    }
 
 
 def classify_hcho(value):
     if value is None:
         return "No data"
+
     if value < 0.0001:
         return "Low"
     elif value < 0.0002:
         return "Moderate"
     elif value < 0.0003:
         return "High"
+
     return "Hotspot"
 
 
 def classify_aqi(aqi):
     if aqi is None:
         return "No data"
+
     if aqi <= 50:
         return "Good"
     elif aqi <= 100:
@@ -61,6 +157,7 @@ def classify_aqi(aqi):
         return "Unhealthy"
     elif aqi <= 300:
         return "Very Unhealthy"
+
     return "Hazardous"
 
 
@@ -73,13 +170,16 @@ def get_aqi_advisory(category):
         "Very Unhealthy": "Avoid long outdoor exposure. Limit physical activity outside.",
         "Hazardous": "Avoid outdoor activity. Pollution level is very serious."
     }
+
     return advisories.get(category, "AQI data unavailable for this location.")
 
 
 def get_value_from_hourly(hourly_data, variable_name, index):
     values = hourly_data.get(variable_name)
+
     if values is None or index < 0 or index >= len(values):
         return None
+
     return values[index]
 
 
@@ -88,6 +188,7 @@ def find_current_hour_index(times):
         return 0
 
     current_hour = datetime.now().strftime("%Y-%m-%dT%H:00")
+
     if current_hour in times:
         return times.index(current_hour)
 
@@ -104,17 +205,104 @@ def get_aqi_trend(first_value, last_value):
         return "Increasing"
     elif difference < -10:
         return "Improving"
-    else:
-        return "Stable"
 
+    return "Stable"
+
+
+def get_hcho_cache_key(lat, lon):
+    rounded_lat = round(lat, 2)
+    rounded_lon = round(lon, 2)
+
+    return f"{rounded_lat},{rounded_lon}"
+
+
+# -----------------------------
+# BACKGROUND HOTSPOT SCAN
+# -----------------------------
+
+def run_hcho_hotspot_scan():
+    global HCHO_HOTSPOT_CACHE
+    global HOTSPOT_SCAN_STATUS
+    global HOTSPOT_SCAN_MESSAGE
+    global HOTSPOT_SCAN_STARTED_AT
+    global HOTSPOT_SCAN_FINISHED_AT
+    global HOTSPOT_SCAN_ERROR
+
+    try:
+        HOTSPOT_SCAN_STATUS = "scanning"
+        HOTSPOT_SCAN_MESSAGE = "Scanning latest Sentinel-5P HCHO satellite data for hotspots. This may take 1-3 minutes on first load."
+        HOTSPOT_SCAN_STARTED_AT = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        HOTSPOT_SCAN_FINISHED_AT = None
+        HOTSPOT_SCAN_ERROR = None
+
+        india = get_india_boundary().geometry()
+        image = get_hcho_image()
+
+        hotspot_mask = image.gt(HCHO_HOTSPOT_THRESHOLD)
+
+        hotspot_points = image.updateMask(hotspot_mask).sample(
+            region=india,
+            scale=HCHO_HOTSPOT_SCALE,
+            numPixels=HCHO_HOTSPOT_NUM_PIXELS,
+            seed=42,
+            geometries=True,
+            tileScale=4
+        ).getInfo()
+
+        hotspots = []
+
+        for feature in hotspot_points.get("features", []):
+            coords = feature["geometry"]["coordinates"]
+            hcho_value = feature["properties"].get(HCHO_BAND)
+
+            hotspots.append({
+                "lat": coords[1],
+                "lon": coords[0],
+                "hcho": hcho_value,
+                "risk": classify_hcho(hcho_value)
+            })
+
+        HCHO_HOTSPOT_CACHE = hotspots
+        HOTSPOT_SCAN_STATUS = "ready"
+        HOTSPOT_SCAN_MESSAGE = "Hotspot scan completed using latest available Sentinel-5P HCHO data."
+        HOTSPOT_SCAN_FINISHED_AT = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    except Exception as e:
+        HOTSPOT_SCAN_STATUS = "error"
+        HOTSPOT_SCAN_ERROR = str(e)
+        HOTSPOT_SCAN_MESSAGE = "Hotspot scan failed. HCHO layer and point reports still work."
+        HOTSPOT_SCAN_FINISHED_AT = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def start_hotspot_scan_if_needed():
+    global HOTSPOT_SCAN_STATUS
+
+    if HOTSPOT_SCAN_STATUS == "idle":
+        scan_thread = threading.Thread(target=run_hcho_hotspot_scan)
+        scan_thread.daemon = True
+        scan_thread.start()
+
+
+# -----------------------------
+# ROUTES
+# -----------------------------
 
 @app.route("/")
 def home():
-    return {
+    return jsonify({
         "status": "running",
         "project": "VAYU",
-        "message": "Backend is active"
-    }
+        "message": "Backend is active",
+        "hcho_source": "Sentinel-5P NRTI latest valid pixel composite",
+        "hcho_window_days": HCHO_ROLLING_DAYS,
+        "aqi_source": "Open-Meteo Air Quality API",
+        "weather_source": "Open-Meteo Forecast API"
+    })
+
+
+@app.route("/get_hcho_metadata")
+def get_hcho_metadata_route():
+    return jsonify(get_hcho_metadata("metadata"))
 
 
 @app.route("/get_hcho_tile")
@@ -123,8 +311,10 @@ def get_hcho_tile():
 
     try:
         if HCHO_TILE_CACHE is not None:
+            metadata = get_hcho_metadata("cache")
+
             return jsonify({
-                "source": "cache",
+                **metadata,
                 "tile_url": HCHO_TILE_CACHE
             })
 
@@ -138,99 +328,126 @@ def get_hcho_tile():
 
         map_id = image.getMapId(vis)
         tile_url = map_id["tile_fetcher"].url_format
+
         HCHO_TILE_CACHE = tile_url
 
+        metadata = get_hcho_metadata("earth_engine")
+
         return jsonify({
-            "source": "earth_engine",
+            **metadata,
             "tile_url": tile_url
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "route": "/get_hcho_tile"
+        }), 500
 
 
 @app.route("/get_hcho_value")
 def get_hcho_value():
+    global HCHO_VALUE_CACHE
+
     try:
         lat = float(request.args.get("lat"))
         lon = float(request.args.get("lon"))
 
-        point = ee.Geometry.Point([lon, lat])
-        area = point.buffer(10000)
+        cache_key = get_hcho_cache_key(lat, lon)
 
-        image = get_hcho_image()
+        if cache_key in HCHO_VALUE_CACHE:
+            cached_data = HCHO_VALUE_CACHE[cache_key]
+            metadata = get_hcho_metadata("cache")
+
+            return jsonify({
+                **metadata,
+                **cached_data
+            })
+
+        point = ee.Geometry.Point([lon, lat])
+        area = point.buffer(HCHO_POINT_BUFFER_METERS)
+
+        image = get_hcho_image(region=area).rename("hcho")
 
         result = image.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=area,
-            scale=10000,
-            maxPixels=1e13
+            scale=HCHO_POINT_SCALE,
+            maxPixels=1e13,
+            bestEffort=True,
+            tileScale=2
         ).getInfo()
 
-        value = result.get("tropospheric_HCHO_column_number_density")
+        value = result.get("hcho")
+        risk = classify_hcho(value)
 
-        return jsonify({
+        response_data = {
             "lat": lat,
             "lon": lon,
             "hcho": value,
-            "risk": classify_hcho(value)
+            "risk": risk,
+            "buffer_meters": HCHO_POINT_BUFFER_METERS,
+            "scale": HCHO_POINT_SCALE
+        }
+
+        HCHO_VALUE_CACHE[cache_key] = response_data
+
+        metadata = get_hcho_metadata("earth_engine")
+
+        return jsonify({
+            **metadata,
+            **response_data
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "route": "/get_hcho_value"
+        }), 500
+
+
+@app.route("/start_hcho_hotspot_scan")
+def start_hcho_hotspot_scan():
+    start_hotspot_scan_if_needed()
+
+    metadata = get_hcho_metadata("hotspot_scan")
+
+    return jsonify({
+        **metadata,
+        "status": HOTSPOT_SCAN_STATUS,
+        "message": HOTSPOT_SCAN_MESSAGE,
+        "started_at": HOTSPOT_SCAN_STARTED_AT,
+        "finished_at": HOTSPOT_SCAN_FINISHED_AT,
+        "count": len(HCHO_HOTSPOT_CACHE),
+        "threshold": HCHO_HOTSPOT_THRESHOLD
+    })
 
 
 @app.route("/get_hcho_hotspots")
 def get_hcho_hotspots():
-    global HCHO_HOTSPOT_CACHE
-
     try:
-        hotspot_threshold = 0.00025
+        start_hotspot_scan_if_needed()
 
-        if HCHO_HOTSPOT_CACHE is not None:
-            return jsonify({
-                "source": "cache",
-                "count": len(HCHO_HOTSPOT_CACHE),
-                "threshold": hotspot_threshold,
-                "hotspots": HCHO_HOTSPOT_CACHE
-            })
-
-        india = get_india_boundary().geometry()
-        image = get_hcho_image()
-        hotspot_mask = image.gt(hotspot_threshold)
-
-        hotspot_points = image.updateMask(hotspot_mask).sample(
-            region=india,
-            scale=25000,
-            numPixels=30,
-            seed=42,
-            geometries=True
-        ).getInfo()
-
-        hotspots = []
-
-        for feature in hotspot_points["features"]:
-            coords = feature["geometry"]["coordinates"]
-            hcho_value = feature["properties"].get("tropospheric_HCHO_column_number_density")
-
-            hotspots.append({
-                "lat": coords[1],
-                "lon": coords[0],
-                "hcho": hcho_value,
-                "risk": classify_hcho(hcho_value)
-            })
-
-        HCHO_HOTSPOT_CACHE = hotspots
+        metadata = get_hcho_metadata("hotspot_scan")
 
         return jsonify({
-            "source": "earth_engine",
-            "count": len(hotspots),
-            "threshold": hotspot_threshold,
-            "hotspots": hotspots
+            **metadata,
+            "status": HOTSPOT_SCAN_STATUS,
+            "message": HOTSPOT_SCAN_MESSAGE,
+            "started_at": HOTSPOT_SCAN_STARTED_AT,
+            "finished_at": HOTSPOT_SCAN_FINISHED_AT,
+            "error": HOTSPOT_SCAN_ERROR,
+            "count": len(HCHO_HOTSPOT_CACHE),
+            "threshold": HCHO_HOTSPOT_THRESHOLD,
+            "sample_scale": HCHO_HOTSPOT_SCALE,
+            "hotspots": HCHO_HOTSPOT_CACHE
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "route": "/get_hcho_hotspots"
+        }), 500
 
 
 @app.route("/get_aqi_value")
@@ -257,6 +474,8 @@ def get_aqi_value():
         category = classify_aqi(aqi)
 
         return jsonify({
+            "source": "Open-Meteo Air Quality API",
+            "data_type": "current-hour model estimate",
             "lat": lat,
             "lon": lon,
             "aqi": aqi,
@@ -274,7 +493,10 @@ def get_aqi_value():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "route": "/get_aqi_value"
+        }), 500
 
 
 @app.route("/get_aqi_forecast")
@@ -332,6 +554,8 @@ def get_aqi_forecast():
         forecast_category = classify_aqi(max_aqi)
 
         return jsonify({
+            "source": "Open-Meteo Air Quality API",
+            "data_type": "24-hour air quality forecast",
             "lat": lat,
             "lon": lon,
             "hours": len(forecast_points),
@@ -345,7 +569,10 @@ def get_aqi_forecast():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "route": "/get_aqi_forecast"
+        }), 500
 
 
 @app.route("/get_weather_value")
@@ -375,6 +602,8 @@ def get_weather_value():
         wind_speed = get_value_from_hourly(hourly, "wind_speed_10m", index)
 
         return jsonify({
+            "source": "Open-Meteo Forecast API",
+            "data_type": "current-hour weather model estimate",
             "lat": lat,
             "lon": lon,
             "time": times[index] if times and index < len(times) else None,
@@ -388,19 +617,38 @@ def get_weather_value():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "route": "/get_weather_value"
+        }), 500
 
 
 @app.route("/clear_cache")
 def clear_cache():
     global HCHO_TILE_CACHE
+    global HCHO_IMAGE_CACHE
+    global HCHO_VALUE_CACHE
     global HCHO_HOTSPOT_CACHE
+    global HOTSPOT_SCAN_STATUS
+    global HOTSPOT_SCAN_MESSAGE
+    global HOTSPOT_SCAN_STARTED_AT
+    global HOTSPOT_SCAN_FINISHED_AT
+    global HOTSPOT_SCAN_ERROR
 
     HCHO_TILE_CACHE = None
-    HCHO_HOTSPOT_CACHE = None
+    HCHO_IMAGE_CACHE = None
+    HCHO_VALUE_CACHE = {}
+
+    HCHO_HOTSPOT_CACHE = []
+    HOTSPOT_SCAN_STATUS = "idle"
+    HOTSPOT_SCAN_MESSAGE = "Hotspot scan has not started."
+    HOTSPOT_SCAN_STARTED_AT = None
+    HOTSPOT_SCAN_FINISHED_AT = None
+    HOTSPOT_SCAN_ERROR = None
 
     return jsonify({
-        "status": "cache cleared"
+        "status": "cache cleared",
+        "message": "HCHO tile, image, point value, and hotspot cache cleared"
     })
 
 
