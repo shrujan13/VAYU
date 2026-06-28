@@ -1,9 +1,14 @@
+* {
+    box-sizing: border-box;
+}
+
 html,
 body {
     margin: 0;
     padding: 0;
     height: 100%;
-    font-family: Arial, sans-serif;
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #0b1220;
 }
 
 #map {
@@ -11,18 +16,29 @@ body {
     height: 100vh;
 }
 
+/* Common glass card style */
+.legend,
+.status-panel,
+.search-panel,
+.report-panel {
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
+    font-family: "Segoe UI", Arial, sans-serif;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Legend */
 .legend {
-    background: white;
     padding: 12px;
-    border-radius: 10px;
-    font-family: Arial, sans-serif;
-    box-shadow: 0 0 12px rgba(0,0,0,0.25);
     line-height: 22px;
 }
 
 .legend h4 {
     margin: 0 0 8px;
-    font-size: 16px;
+    font-size: 15px;
+    color: #0b3d91;
 }
 
 .legend span {
@@ -30,70 +46,78 @@ body {
     width: 18px;
     height: 12px;
     margin-right: 8px;
+    border-radius: 3px;
 }
 
+/* Status */
 .status-panel {
-    background: white;
     padding: 12px;
-    border-radius: 10px;
-    font-family: Arial, sans-serif;
-    box-shadow: 0 0 12px rgba(0,0,0,0.25);
     line-height: 22px;
-    min-width: 190px;
+    min-width: 210px;
+    font-size: 13px;
 }
 
 .status-panel h4 {
     margin: 0 0 8px;
     font-size: 16px;
+    color: #0b3d91;
 }
 
+/* Search */
 .search-panel {
-    background: white;
-    padding: 12px;
-    border-radius: 10px;
-    font-family: Arial, sans-serif;
-    box-shadow: 0 0 12px rgba(0,0,0,0.25);
+    padding: 13px;
     line-height: 22px;
-    width: 220px;
+    width: 235px;
 }
 
 .search-panel h4 {
     margin: 0 0 8px;
     font-size: 16px;
+    color: #0b3d91;
 }
 
 .search-panel input {
-    width: 200px;
-    padding: 7px;
-    margin-bottom: 7px;
-    border: 1px solid #999;
-    border-radius: 5px;
-}
-
-.search-panel button {
-    width: 216px;
-    padding: 7px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    background: #1f6feb;
-    color: white;
-    font-weight: bold;
-}
-
-#citySearchMessage {
-    margin-top: 6px;
+    width: 100%;
+    padding: 9px;
+    margin-bottom: 8px;
+    border: 1px solid #b8c2d2;
+    border-radius: 8px;
+    outline: none;
     font-size: 13px;
 }
 
+.search-panel input:focus {
+    border-color: #1f6feb;
+    box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.15);
+}
+
+.search-panel button {
+    width: 100%;
+    padding: 9px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #0b3d91, #1f6feb);
+    color: white;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+.search-panel button:hover {
+    opacity: 0.92;
+}
+
+#citySearchMessage {
+    margin-top: 7px;
+    font-size: 12px;
+    color: #444;
+}
+
+/* Report Panel */
 .report-panel {
-    background: white;
-    padding: 14px;
-    border-radius: 12px;
-    font-family: Arial, sans-serif;
-    box-shadow: 0 0 14px rgba(0,0,0,0.3);
-    width: 390px;
-    max-height: 58vh;
+    padding: 15px;
+    width: 410px;
+    max-height: 62vh;
     overflow-y: auto;
     line-height: 21px;
 }
@@ -102,49 +126,51 @@ body {
     margin: 0 0 10px;
     font-size: 18px;
     color: #0b3d91;
+    letter-spacing: 0.2px;
 }
 
 .report-panel h4 {
     margin: 0 0 8px;
     font-size: 15px;
-    color: #111;
+    color: #111827;
 }
 
 .report-section {
-    border-top: 1px solid #ddd;
+    border-top: 1px solid #dbe3ef;
     padding-top: 10px;
     margin-top: 10px;
 }
 
 .small-text {
     font-size: 12px;
-    color: #555;
+    color: #526174;
     margin-top: 4px;
 }
 
+/* Metric cards */
 .metric-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 9px;
 }
 
 .metric-card {
-    background: #f4f7fb;
-    border-radius: 10px;
-    padding: 10px;
-    border: 1px solid #dce3ee;
+    background: linear-gradient(180deg, #f8fbff, #eef4ff);
+    border-radius: 12px;
+    padding: 11px;
+    border: 1px solid #dce7f8;
 }
 
 .metric-label {
     display: block;
     font-size: 12px;
-    color: #555;
+    color: #5b677a;
 }
 
 .metric-value {
     display: block;
-    font-size: 24px;
-    font-weight: bold;
+    font-size: 25px;
+    font-weight: 800;
     color: #0b3d91;
     margin-top: 3px;
 }
@@ -156,49 +182,61 @@ body {
 .metric-note {
     display: block;
     font-size: 12px;
-    color: #333;
+    color: #344054;
     margin-top: 3px;
 }
 
+/* Data rows */
 .data-row {
     display: flex;
     justify-content: space-between;
-    gap: 10px;
-    border-bottom: 1px solid #eee;
-    padding: 4px 0;
+    gap: 12px;
+    border-bottom: 1px solid #edf0f5;
+    padding: 5px 0;
     font-size: 13px;
 }
 
+.data-row span {
+    color: #4b5563;
+}
+
+.data-row b {
+    color: #111827;
+}
+
+/* Info boxes */
 .analysis-box {
     background: #eef6ff;
     border-left: 4px solid #1f6feb;
-    padding: 9px;
-    border-radius: 6px;
+    padding: 10px;
+    border-radius: 8px;
     font-size: 13px;
+    color: #102a43;
 }
 
 .advisory-box {
-    background: #f1fff1;
-    border-left: 4px solid #228b22;
-    padding: 9px;
-    border-radius: 6px;
+    background: #effff0;
+    border-left: 4px solid #238636;
+    padding: 10px;
+    border-radius: 8px;
     font-size: 13px;
+    color: #153b1f;
 }
 
 .forecast-preview {
-    margin-top: 8px;
-    background: #fafafa;
-    border-radius: 8px;
-    padding: 8px;
+    margin-top: 9px;
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 9px;
     font-size: 12px;
-    border: 1px solid #eee;
+    border: 1px solid #e5e7eb;
 }
 
 .loading-box {
     background: #fff8e1;
     border-left: 4px solid #f9a825;
     padding: 10px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 13px;
 }
 
@@ -206,6 +244,93 @@ body {
     background: #ffecec;
     border-left: 4px solid #d32f2f;
     padding: 10px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 13px;
+}
+
+/* Scrollbar because apparently even scrollbars need fashion */
+.report-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.report-panel::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 8px;
+}
+
+.report-panel::-webkit-scrollbar-thumb {
+    background: #b8c2d2;
+    border-radius: 8px;
+}
+
+.report-panel::-webkit-scrollbar-thumb:hover {
+    background: #8793a5;
+}
+
+/* Leaflet popup polish */
+.leaflet-popup-content-wrapper {
+    border-radius: 12px;
+}
+
+.leaflet-popup-content {
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+}
+
+/* Mobile responsive layout */
+@media (max-width: 768px) {
+
+    .status-panel {
+        min-width: 170px;
+        font-size: 12px;
+        padding: 10px;
+    }
+
+    .search-panel {
+        width: 210px;
+        padding: 10px;
+    }
+
+    .report-panel {
+        width: 92vw;
+        max-height: 48vh;
+        padding: 12px;
+    }
+
+    .report-panel h3 {
+        font-size: 16px;
+    }
+
+    .metric-value {
+        font-size: 21px;
+    }
+
+    .legend {
+        font-size: 12px;
+        padding: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+
+    .status-panel {
+        display: none;
+    }
+
+    .search-panel {
+        width: 190px;
+    }
+
+    .report-panel {
+        width: 94vw;
+        max-height: 45vh;
+    }
+
+    .metric-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .legend {
+        display: none;
+    }
 }
