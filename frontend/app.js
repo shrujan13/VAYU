@@ -18,6 +18,10 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap"
 }).addTo(window.vayuMap);
 
+// Layers
+const hotspotLayer = L.layerGroup().addTo(window.vayuMap);
+const selectedLocationLayer = L.layerGroup().addTo(window.vayuMap);
+
 
 // Format HCHO value
 function formatHchoValue(value) {
@@ -125,127 +129,6 @@ function getEnvironmentalAnalysis(hchoRisk, aqiCategory, weather, forecastData) 
 }
 
 
-// Show HCHO + AQI + Weather + Forecast popup for any location
-function showLocationData(lat, lon, title, addressText) {
-
-    const popup = L.popup({
-        maxWidth: 460
-    })
-        .setLatLng([lat, lon])
-        .setContent(`
-            <b>${title}</b><br>
-            ${addressText ? addressText + "<br>" : ""}
-            <hr>
-            Latitude: ${lat.toFixed(5)}<br>
-            Longitude: ${lon.toFixed(5)}<br>
-            HCHO: Loading...<br>
-            AQI: Loading...<br>
-            Weather: Loading...<br>
-            Forecast: Loading...
-        `)
-        .openOn(window.vayuMap);
-
-    const hchoUrl = `http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`;
-    const aqiUrl = `http://127.0.0.1:5000/get_aqi_value?lat=${lat}&lon=${lon}`;
-    const weatherUrl = `http://127.0.0.1:5000/get_weather_value?lat=${lat}&lon=${lon}`;
-    const forecastUrl = `http://127.0.0.1:5000/get_aqi_forecast?lat=${lat}&lon=${lon}`;
-
-    Promise.all([
-        fetch(hchoUrl).then(response => response.json()),
-        fetch(aqiUrl).then(response => response.json()),
-        fetch(weatherUrl).then(response => response.json()),
-        fetch(forecastUrl).then(response => response.json())
-    ])
-        .then(([hchoData, aqiData, weatherData, forecastData]) => {
-
-            const hchoText = formatHchoValue(hchoData.hcho);
-            const pollutants = aqiData.pollutants || {};
-            const weather = weatherData.weather || {};
-
-            const analysis = getEnvironmentalAnalysis(
-                hchoData.risk,
-                aqiData.category,
-                weather,
-                forecastData
-            );
-
-            popup.setContent(`
-                <b>${title}</b><br>
-                ${addressText ? addressText + "<br>" : ""}
-                <hr>
-
-                <b>Location</b><br>
-                Latitude: ${lat.toFixed(5)}<br>
-                Longitude: ${lon.toFixed(5)}<br>
-
-                <hr>
-
-                <b>HCHO Satellite Data</b><br>
-                HCHO: ${hchoText}<br>
-                HCHO Risk: ${hchoData.risk}<br>
-
-                <hr>
-
-                <b>AQI & Pollutants</b><br>
-                Current AQI: ${aqiData.aqi}<br>
-                Category: ${aqiData.category}<br>
-                AQI Time: ${aqiData.time}<br>
-                PM2.5: ${formatPollutantValue(pollutants.pm2_5)} µg/m³<br>
-                PM10: ${formatPollutantValue(pollutants.pm10)} µg/m³<br>
-                NO₂: ${formatPollutantValue(pollutants.nitrogen_dioxide)} µg/m³<br>
-                SO₂: ${formatPollutantValue(pollutants.sulphur_dioxide)} µg/m³<br>
-                CO: ${formatPollutantValue(pollutants.carbon_monoxide)} µg/m³<br>
-                O₃: ${formatPollutantValue(pollutants.ozone)} µg/m³<br>
-
-                <hr>
-
-                <b>Weather Intelligence</b><br>
-                Weather Time: ${weatherData.time}<br>
-                Temperature: ${formatWeatherValue(weather.temperature_2m, "°C")}<br>
-                Humidity: ${formatWeatherValue(weather.relative_humidity_2m, "%")}<br>
-                Wind Speed: ${formatWeatherValue(weather.wind_speed_10m, "km/h")}<br>
-                Cloud Cover: ${formatWeatherValue(weather.cloud_cover, "%")}<br>
-                Rainfall: ${formatWeatherValue(weather.precipitation, "mm")}<br>
-
-                <hr>
-
-                <b>24-Hour AQI Forecast</b><br>
-                Average AQI: ${forecastData.average_aqi}<br>
-                Minimum AQI: ${forecastData.min_aqi}<br>
-                Maximum AQI: ${forecastData.max_aqi}<br>
-                Trend: ${forecastData.trend}<br>
-                Forecast Category: ${forecastData.forecast_category}<br>
-                Forecast Hours: ${forecastData.hours}<br>
-
-                <br>
-                <b>Next 6 Hours</b><br>
-                ${formatForecastPreview(forecastData.forecast)}
-
-                <hr>
-
-                <b>Smart Analysis</b><br>
-                ${analysis}<br>
-
-                <hr>
-
-                <b>Health Advisory</b><br>
-                ${aqiData.advisory}
-            `);
-        })
-        .catch(error => {
-            console.error("Error loading location data:", error);
-
-            popup.setContent(`
-                <b>${title}</b><br>
-                ${addressText ? addressText + "<br>" : ""}
-                Latitude: ${lat.toFixed(5)}<br>
-                Longitude: ${lon.toFixed(5)}<br>
-                Data loading failed
-            `);
-        });
-}
-
-
 // Status panel
 const statusPanel = L.control({ position: "topleft" });
 
@@ -286,9 +169,9 @@ searchPanel.onAdd = function () {
     const div = L.DomUtil.create("div", "search-panel");
 
     div.innerHTML = `
-        <h4>Search City</h4>
+        <h4>Search Location</h4>
         <input id="cityInput" type="text" placeholder="Enter any Indian city">
-        <button id="citySearchButton">Search</button>
+        <button id="citySearchButton">Analyze</button>
         <div id="citySearchMessage"></div>
     `;
 
@@ -301,7 +184,202 @@ searchPanel.onAdd = function () {
 searchPanel.addTo(window.vayuMap);
 
 
-// Search any Indian city using OpenStreetMap and directly show full data
+// Report panel
+const reportPanel = L.control({ position: "bottomleft" });
+
+reportPanel.onAdd = function () {
+    const div = L.DomUtil.create("div", "report-panel");
+
+    div.innerHTML = `
+        <h3>VAYU Environmental Report</h3>
+        <div class="small-text">
+            Search a city or click anywhere on the map to generate a detailed air quality report.
+        </div>
+    `;
+
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+
+    return div;
+};
+
+reportPanel.addTo(window.vayuMap);
+
+
+function setReportPanelContent(html) {
+    const panel = document.querySelector(".report-panel");
+
+    if (panel) {
+        panel.innerHTML = html;
+    }
+}
+
+
+// Mark selected location
+function showSelectedLocation(lat, lon) {
+    selectedLocationLayer.clearLayers();
+
+    L.circleMarker([lat, lon], {
+        radius: 7,
+        color: "blue",
+        fillColor: "blue",
+        fillOpacity: 0.8,
+        weight: 2
+    }).addTo(selectedLocationLayer);
+}
+
+
+// Show HCHO + AQI + Weather + Forecast report
+function showLocationData(lat, lon, title, addressText) {
+
+    showSelectedLocation(lat, lon);
+
+    const popup = L.popup({
+        maxWidth: 280
+    })
+        .setLatLng([lat, lon])
+        .setContent(`
+            <b>${title}</b><br>
+            Generating VAYU report...
+        `)
+        .openOn(window.vayuMap);
+
+    setReportPanelContent(`
+        <h3>VAYU Environmental Report</h3>
+        <div class="loading-box">
+            Loading satellite, AQI, weather, and forecast data...
+        </div>
+    `);
+
+    const hchoUrl = `http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`;
+    const aqiUrl = `http://127.0.0.1:5000/get_aqi_value?lat=${lat}&lon=${lon}`;
+    const weatherUrl = `http://127.0.0.1:5000/get_weather_value?lat=${lat}&lon=${lon}`;
+    const forecastUrl = `http://127.0.0.1:5000/get_aqi_forecast?lat=${lat}&lon=${lon}`;
+
+    Promise.all([
+        fetch(hchoUrl).then(response => response.json()),
+        fetch(aqiUrl).then(response => response.json()),
+        fetch(weatherUrl).then(response => response.json()),
+        fetch(forecastUrl).then(response => response.json())
+    ])
+        .then(([hchoData, aqiData, weatherData, forecastData]) => {
+
+            const hchoText = formatHchoValue(hchoData.hcho);
+            const pollutants = aqiData.pollutants || {};
+            const weather = weatherData.weather || {};
+
+            const analysis = getEnvironmentalAnalysis(
+                hchoData.risk,
+                aqiData.category,
+                weather,
+                forecastData
+            );
+
+            popup.setContent(`
+                <b>${title}</b><br>
+                AQI: ${aqiData.aqi}<br>
+                HCHO Risk: ${hchoData.risk}<br>
+                Full report shown in panel.
+            `);
+
+            setReportPanelContent(`
+                <h3>VAYU Environmental Report</h3>
+
+                <div class="report-section">
+                    <h4>Selected Location</h4>
+                    <div><b>${title}</b></div>
+                    ${addressText ? `<div class="small-text">${addressText}</div>` : ""}
+                    <div class="small-text">Lat: ${lat.toFixed(5)} | Lon: ${lon.toFixed(5)}</div>
+                </div>
+
+                <div class="report-section">
+                    <h4>Overall Status</h4>
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <span class="metric-label">Current AQI</span>
+                            <span class="metric-value">${aqiData.aqi}</span>
+                            <span class="metric-note">${aqiData.category}</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">HCHO Risk</span>
+                            <span class="metric-value small-value">${hchoData.risk}</span>
+                            <span class="metric-note">${hchoText}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="report-section">
+                    <h4>AQI & Pollutants</h4>
+                    <div class="data-row"><span>PM2.5</span><b>${formatPollutantValue(pollutants.pm2_5)} µg/m³</b></div>
+                    <div class="data-row"><span>PM10</span><b>${formatPollutantValue(pollutants.pm10)} µg/m³</b></div>
+                    <div class="data-row"><span>NO₂</span><b>${formatPollutantValue(pollutants.nitrogen_dioxide)} µg/m³</b></div>
+                    <div class="data-row"><span>SO₂</span><b>${formatPollutantValue(pollutants.sulphur_dioxide)} µg/m³</b></div>
+                    <div class="data-row"><span>CO</span><b>${formatPollutantValue(pollutants.carbon_monoxide)} µg/m³</b></div>
+                    <div class="data-row"><span>O₃</span><b>${formatPollutantValue(pollutants.ozone)} µg/m³</b></div>
+                    <div class="small-text">AQI Time: ${aqiData.time}</div>
+                </div>
+
+                <div class="report-section">
+                    <h4>Weather Intelligence</h4>
+                    <div class="data-row"><span>Temperature</span><b>${formatWeatherValue(weather.temperature_2m, "°C")}</b></div>
+                    <div class="data-row"><span>Humidity</span><b>${formatWeatherValue(weather.relative_humidity_2m, "%")}</b></div>
+                    <div class="data-row"><span>Wind Speed</span><b>${formatWeatherValue(weather.wind_speed_10m, "km/h")}</b></div>
+                    <div class="data-row"><span>Cloud Cover</span><b>${formatWeatherValue(weather.cloud_cover, "%")}</b></div>
+                    <div class="data-row"><span>Rainfall</span><b>${formatWeatherValue(weather.precipitation, "mm")}</b></div>
+                    <div class="small-text">Weather Time: ${weatherData.time}</div>
+                </div>
+
+                <div class="report-section">
+                    <h4>24-Hour AQI Forecast</h4>
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <span class="metric-label">Average</span>
+                            <span class="metric-value">${forecastData.average_aqi}</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Peak</span>
+                            <span class="metric-value">${forecastData.max_aqi}</span>
+                        </div>
+                    </div>
+                    <div class="data-row"><span>Minimum AQI</span><b>${forecastData.min_aqi}</b></div>
+                    <div class="data-row"><span>Trend</span><b>${forecastData.trend}</b></div>
+                    <div class="data-row"><span>Forecast Category</span><b>${forecastData.forecast_category}</b></div>
+                    <div class="forecast-preview">
+                        <b>Next 6 Hours</b><br>
+                        ${formatForecastPreview(forecastData.forecast)}
+                    </div>
+                </div>
+
+                <div class="report-section">
+                    <h4>Smart Analysis</h4>
+                    <div class="analysis-box">${analysis}</div>
+                </div>
+
+                <div class="report-section">
+                    <h4>Health Advisory</h4>
+                    <div class="advisory-box">${aqiData.advisory}</div>
+                </div>
+            `);
+        })
+        .catch(error => {
+            console.error("Error loading location data:", error);
+
+            popup.setContent(`
+                <b>${title}</b><br>
+                Data loading failed.
+            `);
+
+            setReportPanelContent(`
+                <h3>VAYU Environmental Report</h3>
+                <div class="error-box">
+                    Data loading failed. Check backend server and internet connection.
+                </div>
+            `);
+        });
+}
+
+
+// Search city using OpenStreetMap
 function searchCity() {
     const input = document.getElementById("cityInput");
     const message = document.getElementById("citySearchMessage");
@@ -365,11 +443,7 @@ setTimeout(function () {
 }, 500);
 
 
-// Hotspot marker layer
-const hotspotLayer = L.layerGroup().addTo(window.vayuMap);
-
-
-// Load HCHO satellite layer from Flask backend
+// Load HCHO satellite layer
 fetch("http://127.0.0.1:5000/get_hcho_tile")
     .then(response => response.json())
     .then(data => {
@@ -393,7 +467,7 @@ fetch("http://127.0.0.1:5000/get_hcho_tile")
     });
 
 
-// Load automatic HCHO hotspots
+// Load HCHO hotspots
 function loadHchoHotspots() {
 
     vayuStatus.hotspotsCount = "Loading...";
@@ -450,7 +524,7 @@ function loadHchoHotspots() {
 loadHchoHotspots();
 
 
-// Click location popup with HCHO + AQI + Weather + Forecast
+// Click map to generate report
 window.vayuMap.on("click", function (event) {
 
     const lat = event.latlng.lat;

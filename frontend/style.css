@@ -3,6 +3,7 @@ body {
     margin: 0;
     padding: 0;
     height: 100%;
+    font-family: Arial, sans-serif;
 }
 
 #map {
@@ -13,9 +14,9 @@ body {
 .legend {
     background: white;
     padding: 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     font-family: Arial, sans-serif;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    box-shadow: 0 0 12px rgba(0,0,0,0.25);
     line-height: 22px;
 }
 
@@ -34,9 +35,9 @@ body {
 .status-panel {
     background: white;
     padding: 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     font-family: Arial, sans-serif;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    box-shadow: 0 0 12px rgba(0,0,0,0.25);
     line-height: 22px;
     min-width: 190px;
 }
@@ -49,11 +50,11 @@ body {
 .search-panel {
     background: white;
     padding: 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     font-family: Arial, sans-serif;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    box-shadow: 0 0 12px rgba(0,0,0,0.25);
     line-height: 22px;
-    width: 210px;
+    width: 220px;
 }
 
 .search-panel h4 {
@@ -62,22 +63,149 @@ body {
 }
 
 .search-panel input {
-    width: 190px;
-    padding: 6px;
-    margin-bottom: 6px;
+    width: 200px;
+    padding: 7px;
+    margin-bottom: 7px;
     border: 1px solid #999;
-    border-radius: 4px;
+    border-radius: 5px;
 }
 
 .search-panel button {
-    width: 204px;
-    padding: 6px;
+    width: 216px;
+    padding: 7px;
     border: none;
-    border-radius: 4px;
+    border-radius: 5px;
     cursor: pointer;
+    background: #1f6feb;
+    color: white;
+    font-weight: bold;
 }
 
 #citySearchMessage {
     margin-top: 6px;
+    font-size: 13px;
+}
+
+.report-panel {
+    background: white;
+    padding: 14px;
+    border-radius: 12px;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 0 14px rgba(0,0,0,0.3);
+    width: 390px;
+    max-height: 58vh;
+    overflow-y: auto;
+    line-height: 21px;
+}
+
+.report-panel h3 {
+    margin: 0 0 10px;
+    font-size: 18px;
+    color: #0b3d91;
+}
+
+.report-panel h4 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    color: #111;
+}
+
+.report-section {
+    border-top: 1px solid #ddd;
+    padding-top: 10px;
+    margin-top: 10px;
+}
+
+.small-text {
+    font-size: 12px;
+    color: #555;
+    margin-top: 4px;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.metric-card {
+    background: #f4f7fb;
+    border-radius: 10px;
+    padding: 10px;
+    border: 1px solid #dce3ee;
+}
+
+.metric-label {
+    display: block;
+    font-size: 12px;
+    color: #555;
+}
+
+.metric-value {
+    display: block;
+    font-size: 24px;
+    font-weight: bold;
+    color: #0b3d91;
+    margin-top: 3px;
+}
+
+.small-value {
+    font-size: 17px;
+}
+
+.metric-note {
+    display: block;
+    font-size: 12px;
+    color: #333;
+    margin-top: 3px;
+}
+
+.data-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid #eee;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.analysis-box {
+    background: #eef6ff;
+    border-left: 4px solid #1f6feb;
+    padding: 9px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.advisory-box {
+    background: #f1fff1;
+    border-left: 4px solid #228b22;
+    padding: 9px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.forecast-preview {
+    margin-top: 8px;
+    background: #fafafa;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 12px;
+    border: 1px solid #eee;
+}
+
+.loading-box {
+    background: #fff8e1;
+    border-left: 4px solid #f9a825;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.error-box {
+    background: #ffecec;
+    border-left: 4px solid #d32f2f;
+    padding: 10px;
+    border-radius: 6px;
     font-size: 13px;
 }
