@@ -1,4 +1,6 @@
+@"
 Flask
 flask-cors
 earthengine-api
 gunicorn
+"@ | Set-Content requirements.txt
