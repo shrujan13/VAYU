@@ -144,6 +144,32 @@ window.printVayuReport = function () {
                     border: 1px solid #eee;
                 }
 
+                .forecast-chart-box {
+                    margin-top: 10px;
+                    background: #ffffff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    padding: 8px;
+                }
+
+                .forecast-chart-title {
+                    font-size: 13px;
+                    font-weight: bold;
+                    margin-bottom: 6px;
+                    color: #0b3d91;
+                }
+
+                .forecast-chart {
+                    width: 100%;
+                    overflow-x: auto;
+                }
+
+                .aqi-svg-chart {
+                    width: 100%;
+                    min-width: 310px;
+                    height: auto;
+                }
+
                 .print-report-button {
                     display: none;
                 }
@@ -203,6 +229,166 @@ function formatWeatherValue(value, unit) {
     }
 
     return "No data";
+}
+
+
+// Format time for chart labels
+function formatChartTime(timeText) {
+    if (!timeText) {
+        return "";
+    }
+
+    const parts = timeText.split("T");
+
+    if (parts.length < 2) {
+        return timeText;
+    }
+
+    return parts[1].slice(0, 5);
+}
+
+
+// Create AQI forecast SVG chart with inline styles for PDF export
+function createAqiForecastChart(forecast) {
+    if (!forecast || forecast.length === 0) {
+        return `<div class="small-text">No forecast graph data available.</div>`;
+    }
+
+    const pointsData = forecast
+        .slice(0, 24)
+        .filter(point => point.aqi !== null && point.aqi !== undefined);
+
+    if (pointsData.length === 0) {
+        return `<div class="small-text">No valid AQI values available for graph.</div>`;
+    }
+
+    const width = 340;
+    const height = 155;
+    const paddingLeft = 38;
+    const paddingRight = 16;
+    const paddingTop = 18;
+    const paddingBottom = 32;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+
+    const values = pointsData.map(point => Number(point.aqi));
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const range = Math.max(maxValue - minValue, 1);
+
+    const svgPoints = pointsData.map((point, index) => {
+        const x = pointsData.length === 1
+            ? paddingLeft + chartWidth / 2
+            : paddingLeft + (index * chartWidth / (pointsData.length - 1));
+
+        const y = paddingTop + chartHeight - ((Number(point.aqi) - minValue) / range) * chartHeight;
+
+        return {
+            x: x,
+            y: y,
+            aqi: point.aqi,
+            time: point.time
+        };
+    });
+
+    const polylinePoints = svgPoints
+        .map(point => `${point.x.toFixed(2)},${point.y.toFixed(2)}`)
+        .join(" ");
+
+    const firstTime = formatChartTime(pointsData[0].time);
+    const lastTime = formatChartTime(pointsData[pointsData.length - 1].time);
+
+    const circles = svgPoints.map(point => `
+        <circle
+            cx="${point.x.toFixed(2)}"
+            cy="${point.y.toFixed(2)}"
+            r="3.2"
+            fill="#1f6feb"
+            stroke="#ffffff"
+            stroke-width="1.5">
+            <title>${formatChartTime(point.time)} AQI ${point.aqi}</title>
+        </circle>
+    `).join("");
+
+    return `
+        <svg
+            viewBox="0 0 ${width} ${height}"
+            class="aqi-svg-chart"
+            role="img"
+            xmlns="http://www.w3.org/2000/svg">
+
+            <rect
+                x="0"
+                y="0"
+                width="${width}"
+                height="${height}"
+                rx="10"
+                fill="#f8fbff">
+            </rect>
+
+            <line
+                x1="${paddingLeft}"
+                y1="${paddingTop}"
+                x2="${paddingLeft}"
+                y2="${paddingTop + chartHeight}"
+                stroke="#cfd8e3"
+                stroke-width="1">
+            </line>
+
+            <line
+                x1="${paddingLeft}"
+                y1="${paddingTop + chartHeight}"
+                x2="${paddingLeft + chartWidth}"
+                y2="${paddingTop + chartHeight}"
+                stroke="#cfd8e3"
+                stroke-width="1">
+            </line>
+
+            <text
+                x="8"
+                y="${paddingTop + 5}"
+                font-size="10"
+                fill="#526174">
+                ${maxValue}
+            </text>
+
+            <text
+                x="8"
+                y="${paddingTop + chartHeight}"
+                font-size="10"
+                fill="#526174">
+                ${minValue}
+            </text>
+
+            <polyline
+                points="${polylinePoints}"
+                fill="none"
+                stroke="#1f6feb"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round">
+            </polyline>
+
+            ${circles}
+
+            <text
+                x="${paddingLeft}"
+                y="${height - 9}"
+                font-size="10"
+                fill="#526174">
+                ${firstTime}
+            </text>
+
+            <text
+                x="${paddingLeft + chartWidth - 35}"
+                y="${height - 9}"
+                font-size="10"
+                fill="#526174">
+                ${lastTime}
+            </text>
+        </svg>
+    `;
 }
 
 
@@ -498,6 +684,14 @@ function showLocationData(lat, lon, title, addressText) {
                             <span class="metric-value">${forecastData.max_aqi}</span>
                         </div>
                     </div>
+
+                    <div class="forecast-chart-box">
+                        <div class="forecast-chart-title">AQI Trend Graph</div>
+                        <div class="forecast-chart">
+                            ${createAqiForecastChart(forecastData.forecast)}
+                        </div>
+                    </div>
+
                     <div class="data-row"><span>Minimum AQI</span><b>${forecastData.min_aqi}</b></div>
                     <div class="data-row"><span>Trend</span><b>${forecastData.trend}</b></div>
                     <div class="data-row"><span>Forecast Category</span><b>${forecastData.forecast_category}</b></div>
