@@ -7,9 +7,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 import threading
 import os
-
-app = Flask(__name__)
-CORS(app)
+import tempfile
 
 # -----------------------------
 # DEPLOYMENT SETTINGS
@@ -18,9 +16,12 @@ CORS(app)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
+app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
+CORS(app)
+
 EE_PROJECT_ID = os.environ.get("EE_PROJECT_ID", "vayu-500508")
 EE_SERVICE_ACCOUNT_EMAIL = os.environ.get("EE_SERVICE_ACCOUNT_EMAIL")
-EE_PRIVATE_KEY_FILE = os.environ.get("EE_PRIVATE_KEY_FILE")
+EE_PRIVATE_KEY_JSON = os.environ.get("EE_PRIVATE_KEY_JSON")
 
 EE_INITIALIZED = False
 EE_INIT_ERROR = None
@@ -38,10 +39,19 @@ def initialize_earth_engine():
         return True
 
     try:
-        if EE_SERVICE_ACCOUNT_EMAIL and EE_PRIVATE_KEY_FILE:
+        if EE_SERVICE_ACCOUNT_EMAIL and EE_PRIVATE_KEY_JSON:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".json",
+                delete=False,
+                encoding="utf-8"
+            ) as key_file:
+                key_file.write(EE_PRIVATE_KEY_JSON)
+                key_file_path = key_file.name
+
             credentials = ee.ServiceAccountCredentials(
                 EE_SERVICE_ACCOUNT_EMAIL,
-                EE_PRIVATE_KEY_FILE
+                key_file_path
             )
 
             ee.Initialize(credentials, project=EE_PROJECT_ID)
@@ -76,7 +86,6 @@ HCHO_HOTSPOT_THRESHOLD = 0.00025
 HCHO_HOTSPOT_SCALE = 75000
 HCHO_HOTSPOT_NUM_PIXELS = 20
 
-# Cache variables
 HCHO_TILE_CACHE = None
 HCHO_IMAGE_CACHE = None
 HCHO_VALUE_CACHE = {}
@@ -97,6 +106,15 @@ def fetch_json_from_url(url):
     with urllib.request.urlopen(url, timeout=20) as response:
         data = response.read().decode("utf-8")
         return json.loads(data)
+
+
+def earth_engine_error_response(route_name):
+    return jsonify({
+        "error": "Google Earth Engine is not initialized on this server.",
+        "details": EE_INIT_ERROR,
+        "route": route_name,
+        "message": "Frontend and AQI/weather APIs may still work, but HCHO satellite routes need Earth Engine service account credentials on Render."
+    }), 500
 
 
 def get_india_boundary():
@@ -268,15 +286,6 @@ def get_hcho_cache_key(lat, lon):
     return f"{rounded_lat},{rounded_lon}"
 
 
-def earth_engine_error_response(route_name):
-    return jsonify({
-        "error": "Google Earth Engine is not initialized on this server.",
-        "details": EE_INIT_ERROR,
-        "route": route_name,
-        "message": "Frontend and AQI/weather APIs may still work, but HCHO satellite routes need Earth Engine credentials on Render."
-    }), 500
-
-
 # -----------------------------
 # BACKGROUND HOTSPOT SCAN
 # -----------------------------
@@ -376,11 +385,6 @@ def app_status():
         "aqi_source": "Open-Meteo Air Quality API",
         "weather_source": "Open-Meteo Forecast API"
     })
-
-
-@app.route("/<path:filename>")
-def serve_static_files(filename):
-    return send_from_directory(FRONTEND_DIR, filename)
 
 
 # -----------------------------
@@ -751,6 +755,21 @@ def clear_cache():
         "status": "cache cleared",
         "message": "HCHO tile, image, point value, and hotspot cache cleared"
     })
+
+
+# -----------------------------
+# STATIC FILE ROUTE
+# Keep this at the end so API routes work first
+# -----------------------------
+
+@app.route("/<path:filename>")
+def serve_static_files(filename):
+    file_path = os.path.join(FRONTEND_DIR, filename)
+
+    if os.path.exists(file_path):
+        return send_from_directory(FRONTEND_DIR, filename)
+
+    return send_from_directory(FRONTEND_DIR, "index.html")
 
 
 if __name__ == "__main__":
