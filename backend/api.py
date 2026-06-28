@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import ee
 import json
@@ -6,11 +6,58 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
 import threading
+import os
 
 app = Flask(__name__)
 CORS(app)
 
-ee.Initialize(project="vayu-500508")
+# -----------------------------
+# DEPLOYMENT SETTINGS
+# -----------------------------
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+
+EE_PROJECT_ID = os.environ.get("EE_PROJECT_ID", "vayu-500508")
+EE_SERVICE_ACCOUNT_EMAIL = os.environ.get("EE_SERVICE_ACCOUNT_EMAIL")
+EE_PRIVATE_KEY_FILE = os.environ.get("EE_PRIVATE_KEY_FILE")
+
+EE_INITIALIZED = False
+EE_INIT_ERROR = None
+
+
+# -----------------------------
+# EARTH ENGINE INITIALIZATION
+# -----------------------------
+
+def initialize_earth_engine():
+    global EE_INITIALIZED
+    global EE_INIT_ERROR
+
+    if EE_INITIALIZED:
+        return True
+
+    try:
+        if EE_SERVICE_ACCOUNT_EMAIL and EE_PRIVATE_KEY_FILE:
+            credentials = ee.ServiceAccountCredentials(
+                EE_SERVICE_ACCOUNT_EMAIL,
+                EE_PRIVATE_KEY_FILE
+            )
+
+            ee.Initialize(credentials, project=EE_PROJECT_ID)
+
+        else:
+            ee.Initialize(project=EE_PROJECT_ID)
+
+        EE_INITIALIZED = True
+        EE_INIT_ERROR = None
+        return True
+
+    except Exception as e:
+        EE_INITIALIZED = False
+        EE_INIT_ERROR = str(e)
+        return False
+
 
 # -----------------------------
 # HCHO SETTINGS
@@ -53,6 +100,8 @@ def fetch_json_from_url(url):
 
 
 def get_india_boundary():
+    initialize_earth_engine()
+
     return ee.FeatureCollection("FAO/GAUL/2015/level0") \
         .filter(ee.Filter.eq("ADM0_NAME", "India"))
 
@@ -79,6 +128,8 @@ def mask_hcho_clouds(image):
 
 
 def get_hcho_collection(region=None):
+    initialize_earth_engine()
+
     india = get_india_boundary()
     date_window = get_hcho_date_window()
 
@@ -98,12 +149,13 @@ def get_hcho_collection(region=None):
 def get_hcho_image(region=None):
     global HCHO_IMAGE_CACHE
 
+    initialize_earth_engine()
+
     if region is None and HCHO_IMAGE_CACHE is not None:
         return HCHO_IMAGE_CACHE
 
     collection = get_hcho_collection(region)
 
-    # Latest valid pixel composite from the 14-day rolling window
     image = collection.sort("system:time_start").mosaic()
 
     if region is None:
@@ -216,6 +268,15 @@ def get_hcho_cache_key(lat, lon):
     return f"{rounded_lat},{rounded_lon}"
 
 
+def earth_engine_error_response(route_name):
+    return jsonify({
+        "error": "Google Earth Engine is not initialized on this server.",
+        "details": EE_INIT_ERROR,
+        "route": route_name,
+        "message": "Frontend and AQI/weather APIs may still work, but HCHO satellite routes need Earth Engine credentials on Render."
+    }), 500
+
+
 # -----------------------------
 # BACKGROUND HOTSPOT SCAN
 # -----------------------------
@@ -229,6 +290,13 @@ def run_hcho_hotspot_scan():
     global HOTSPOT_SCAN_ERROR
 
     try:
+        if not initialize_earth_engine():
+            HOTSPOT_SCAN_STATUS = "error"
+            HOTSPOT_SCAN_ERROR = EE_INIT_ERROR
+            HOTSPOT_SCAN_MESSAGE = "Hotspot scan failed because Earth Engine is not initialized."
+            HOTSPOT_SCAN_FINISHED_AT = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return
+
         HOTSPOT_SCAN_STATUS = "scanning"
         HOTSPOT_SCAN_MESSAGE = "Scanning latest Sentinel-5P HCHO satellite data for hotspots. This may take 1-3 minutes on first load."
         HOTSPOT_SCAN_STARTED_AT = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -284,21 +352,40 @@ def start_hotspot_scan_if_needed():
 
 
 # -----------------------------
-# ROUTES
+# FRONTEND ROUTES
 # -----------------------------
 
 @app.route("/")
-def home():
+def serve_frontend():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.route("/app-status")
+def app_status():
+    earth_engine_status = initialize_earth_engine()
+
     return jsonify({
         "status": "running",
         "project": "VAYU",
         "message": "Backend is active",
+        "frontend_dir": FRONTEND_DIR,
+        "earth_engine_initialized": earth_engine_status,
+        "earth_engine_error": EE_INIT_ERROR,
         "hcho_source": "Sentinel-5P NRTI latest valid pixel composite",
         "hcho_window_days": HCHO_ROLLING_DAYS,
         "aqi_source": "Open-Meteo Air Quality API",
         "weather_source": "Open-Meteo Forecast API"
     })
 
+
+@app.route("/<path:filename>")
+def serve_static_files(filename):
+    return send_from_directory(FRONTEND_DIR, filename)
+
+
+# -----------------------------
+# HCHO ROUTES
+# -----------------------------
 
 @app.route("/get_hcho_metadata")
 def get_hcho_metadata_route():
@@ -310,6 +397,9 @@ def get_hcho_tile():
     global HCHO_TILE_CACHE
 
     try:
+        if not initialize_earth_engine():
+            return earth_engine_error_response("/get_hcho_tile")
+
         if HCHO_TILE_CACHE is not None:
             metadata = get_hcho_metadata("cache")
 
@@ -350,6 +440,9 @@ def get_hcho_value():
     global HCHO_VALUE_CACHE
 
     try:
+        if not initialize_earth_engine():
+            return earth_engine_error_response("/get_hcho_value")
+
         lat = float(request.args.get("lat"))
         lon = float(request.args.get("lon"))
 
@@ -449,6 +542,10 @@ def get_hcho_hotspots():
             "route": "/get_hcho_hotspots"
         }), 500
 
+
+# -----------------------------
+# AQI / WEATHER ROUTES
+# -----------------------------
 
 @app.route("/get_aqi_value")
 def get_aqi_value():
@@ -622,6 +719,10 @@ def get_weather_value():
             "route": "/get_weather_value"
         }), 500
 
+
+# -----------------------------
+# CACHE ROUTE
+# -----------------------------
 
 @app.route("/clear_cache")
 def clear_cache():

@@ -17,44 +17,60 @@ body {
 }
 
 /* Common glass card style */
-.legend,
 .status-panel,
 .search-panel,
 .report-panel {
-    background: rgba(255, 255, 255, 0.94);
+    background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(10px);
     border-radius: 14px;
     font-family: "Segoe UI", Arial, sans-serif;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    z-index: 9999;
 }
 
-/* Legend */
-.legend {
+/* Fixed HCHO legend overlay */
+.fixed-hcho-legend {
+    position: fixed;
+    right: 18px;
+    bottom: 34px;
+    z-index: 999999;
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
     padding: 12px;
+    min-width: 145px;
     line-height: 22px;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+    color: #111827;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.7);
 }
 
-.legend h4 {
+.fixed-hcho-legend h4 {
     margin: 0 0 8px;
     font-size: 15px;
     color: #0b3d91;
 }
 
-.legend span {
+.fixed-hcho-legend span {
     display: inline-block;
     width: 18px;
     height: 12px;
     margin-right: 8px;
     border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 /* Status */
 .status-panel {
     padding: 12px;
     line-height: 22px;
-    min-width: 210px;
+    min-width: 260px;
+    max-width: 340px;
     font-size: 13px;
+    color: #111827;
 }
 
 .status-panel h4 {
@@ -68,6 +84,7 @@ body {
     padding: 13px;
     line-height: 22px;
     width: 235px;
+    color: #111827;
 }
 
 .search-panel h4 {
@@ -120,6 +137,7 @@ body {
     max-height: 62vh;
     overflow-y: auto;
     line-height: 21px;
+    color: #111827;
 }
 
 .report-panel h3 {
@@ -354,7 +372,8 @@ body {
 @media (max-width: 768px) {
 
     .status-panel {
-        min-width: 170px;
+        min-width: 190px;
+        max-width: 260px;
         font-size: 12px;
         padding: 10px;
     }
@@ -378,9 +397,12 @@ body {
         font-size: 21px;
     }
 
-    .legend {
+    .fixed-hcho-legend {
+        right: 12px;
+        bottom: 30px;
         font-size: 12px;
         padding: 10px;
+        min-width: 125px;
     }
 }
 
@@ -403,7 +425,11 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .legend {
-        display: none;
+    .fixed-hcho-legend {
+        right: 8px;
+        bottom: 28px;
+        font-size: 11px;
+        padding: 8px;
+        min-width: 115px;
     }
 }

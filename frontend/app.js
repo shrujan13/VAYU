@@ -928,14 +928,19 @@ window.vayuMap.on("click", function (event) {
 });
 
 
-// Legend
-const legend = L.control({ position: "bottomright" });
+// Fixed HCHO legend overlay
+function createFixedHchoLegend() {
+    const oldLegend = document.getElementById("fixedHchoLegend");
 
-legend.onAdd = function () {
+    if (oldLegend) {
+        oldLegend.remove();
+    }
 
-    const div = L.DomUtil.create("div", "legend");
+    const legend = document.createElement("div");
+    legend.id = "fixedHchoLegend";
+    legend.className = "fixed-hcho-legend";
 
-    div.innerHTML = `
+    legend.innerHTML = `
         <h4>HCHO Level</h4>
         <div><span style="background: blue"></span> Low</div>
         <div><span style="background: cyan"></span> Slight</div>
@@ -945,5 +950,7 @@ legend.onAdd = function () {
         <div><span style="background: red"></span> Hotspot</div>
     `;
 
-    return div;
-};
+    document.body.appendChild(legend);
+}
+
+createFixedHchoLegend();
