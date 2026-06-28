@@ -94,6 +94,20 @@ def find_current_hour_index(times):
     return 0
 
 
+def get_aqi_trend(first_value, last_value):
+    if first_value is None or last_value is None:
+        return "No data"
+
+    difference = last_value - first_value
+
+    if difference > 10:
+        return "Increasing"
+    elif difference < -10:
+        return "Improving"
+    else:
+        return "Stable"
+
+
 @app.route("/")
 def home():
     return {
@@ -257,6 +271,77 @@ def get_aqi_value():
                 "sulphur_dioxide": get_value_from_hourly(hourly, "sulphur_dioxide", index),
                 "ozone": get_value_from_hourly(hourly, "ozone", index)
             }
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/get_aqi_forecast")
+def get_aqi_forecast():
+    try:
+        lat = float(request.args.get("lat"))
+        lon = float(request.args.get("lon"))
+
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "us_aqi",
+            "timezone": "auto"
+        }
+
+        url = "https://air-quality-api.open-meteo.com/v1/air-quality?" + urllib.parse.urlencode(params)
+        api_data = fetch_json_from_url(url)
+
+        hourly = api_data.get("hourly", {})
+        times = hourly.get("time", [])
+        aqi_values = hourly.get("us_aqi", [])
+
+        start_index = find_current_hour_index(times)
+        end_index = min(start_index + 24, len(times))
+
+        forecast_points = []
+
+        for i in range(start_index, end_index):
+            forecast_points.append({
+                "time": times[i],
+                "aqi": aqi_values[i]
+            })
+
+        valid_values = [
+            point["aqi"]
+            for point in forecast_points
+            if point["aqi"] is not None
+        ]
+
+        if len(valid_values) == 0:
+            return jsonify({
+                "lat": lat,
+                "lon": lon,
+                "error": "No AQI forecast data available"
+            }), 404
+
+        average_aqi = round(sum(valid_values) / len(valid_values), 2)
+        max_aqi = max(valid_values)
+        min_aqi = min(valid_values)
+
+        first_aqi = valid_values[0]
+        last_aqi = valid_values[-1]
+
+        trend = get_aqi_trend(first_aqi, last_aqi)
+        forecast_category = classify_aqi(max_aqi)
+
+        return jsonify({
+            "lat": lat,
+            "lon": lon,
+            "hours": len(forecast_points),
+            "average_aqi": average_aqi,
+            "max_aqi": max_aqi,
+            "min_aqi": min_aqi,
+            "trend": trend,
+            "forecast_category": forecast_category,
+            "advisory": get_aqi_advisory(forecast_category),
+            "forecast": forecast_points
         })
 
     except Exception as e:
