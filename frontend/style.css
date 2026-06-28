@@ -147,6 +147,24 @@ body {
     margin-top: 4px;
 }
 
+/* Print button */
+.print-report-button {
+    width: 100%;
+    padding: 9px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #238636, #2ea043);
+    color: white;
+    font-weight: bold;
+    font-size: 13px;
+    margin: 6px 0 10px;
+}
+
+.print-report-button:hover {
+    opacity: 0.92;
+}
+
 /* Metric cards */
 .metric-grid {
     display: grid;
