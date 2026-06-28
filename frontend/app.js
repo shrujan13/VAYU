@@ -29,7 +29,7 @@ function formatHchoValue(value) {
 }
 
 
-// Format normal pollutant value
+// Format pollutant value
 function formatPollutantValue(value) {
     if (value !== null && value !== undefined) {
         return Number(value).toFixed(2);
@@ -39,7 +39,68 @@ function formatPollutantValue(value) {
 }
 
 
-// Show HCHO + AQI data popup for any location
+// Format weather value
+function formatWeatherValue(value, unit) {
+    if (value !== null && value !== undefined) {
+        return Number(value).toFixed(1) + " " + unit;
+    }
+
+    return "No data";
+}
+
+
+// Smart environmental analysis
+function getEnvironmentalAnalysis(hchoRisk, aqiCategory, weather) {
+    const insights = [];
+
+    const windSpeed = weather.wind_speed_10m;
+    const humidity = weather.relative_humidity_2m;
+    const precipitation = weather.precipitation;
+    const cloudCover = weather.cloud_cover;
+
+    if (aqiCategory === "Good") {
+        insights.push("Current AQI is good, so outdoor activity is generally safe.");
+    } else if (aqiCategory === "Moderate") {
+        insights.push("AQI is moderate. Sensitive people should monitor outdoor exposure.");
+    } else if (aqiCategory === "Unhealthy for Sensitive Groups") {
+        insights.push("Sensitive people should reduce prolonged outdoor activity.");
+    } else if (aqiCategory === "Unhealthy" || aqiCategory === "Very Unhealthy" || aqiCategory === "Hazardous") {
+        insights.push("Air quality is poor. Outdoor exposure should be reduced.");
+    }
+
+    if (hchoRisk === "High" || hchoRisk === "Hotspot") {
+        insights.push("HCHO level indicates possible emission hotspot influence.");
+    }
+
+    if (windSpeed !== null && windSpeed !== undefined) {
+        if (windSpeed < 6) {
+            insights.push("Low wind speed may reduce pollutant dispersion.");
+        } else if (windSpeed > 15) {
+            insights.push("Higher wind speed may help disperse pollutants.");
+        }
+    }
+
+    if (humidity !== null && humidity !== undefined && humidity > 75) {
+        insights.push("High humidity may contribute to haze or pollution persistence.");
+    }
+
+    if (precipitation !== null && precipitation !== undefined && precipitation > 0) {
+        insights.push("Rainfall may help reduce suspended particles in air.");
+    }
+
+    if (cloudCover !== null && cloudCover !== undefined && cloudCover > 70) {
+        insights.push("High cloud cover may affect satellite observation quality.");
+    }
+
+    if (insights.length === 0) {
+        return "Environmental condition appears stable based on available data.";
+    }
+
+    return insights.join(" ");
+}
+
+
+// Show HCHO + AQI + Weather data popup for any location
 function showLocationData(lat, lon, title, addressText) {
 
     const popup = L.popup()
@@ -47,26 +108,35 @@ function showLocationData(lat, lon, title, addressText) {
         .setContent(`
             <b>${title}</b><br>
             ${addressText ? addressText + "<br>" : ""}
+            <hr>
             Latitude: ${lat.toFixed(5)}<br>
             Longitude: ${lon.toFixed(5)}<br>
             HCHO: Loading...<br>
             AQI: Loading...<br>
-            Risk: Analyzing...
+            Weather: Loading...
         `)
         .openOn(window.vayuMap);
 
     const hchoUrl = `http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`;
     const aqiUrl = `http://127.0.0.1:5000/get_aqi_value?lat=${lat}&lon=${lon}`;
+    const weatherUrl = `http://127.0.0.1:5000/get_weather_value?lat=${lat}&lon=${lon}`;
 
     Promise.all([
         fetch(hchoUrl).then(response => response.json()),
-        fetch(aqiUrl).then(response => response.json())
+        fetch(aqiUrl).then(response => response.json()),
+        fetch(weatherUrl).then(response => response.json())
     ])
-        .then(([hchoData, aqiData]) => {
+        .then(([hchoData, aqiData, weatherData]) => {
 
             const hchoText = formatHchoValue(hchoData.hcho);
-
             const pollutants = aqiData.pollutants || {};
+            const weather = weatherData.weather || {};
+
+            const analysis = getEnvironmentalAnalysis(
+                hchoData.risk,
+                aqiData.category,
+                weather
+            );
 
             popup.setContent(`
                 <b>${title}</b><br>
@@ -85,14 +155,10 @@ function showLocationData(lat, lon, title, addressText) {
 
                 <hr>
 
-                <b>AQI Ground-Level Estimate</b><br>
+                <b>AQI & Pollutants</b><br>
                 AQI: ${aqiData.aqi}<br>
                 Category: ${aqiData.category}<br>
-                Time: ${aqiData.time}<br>
-
-                <hr>
-
-                <b>Pollutants</b><br>
+                AQI Time: ${aqiData.time}<br>
                 PM2.5: ${formatPollutantValue(pollutants.pm2_5)} µg/m³<br>
                 PM10: ${formatPollutantValue(pollutants.pm10)} µg/m³<br>
                 NO₂: ${formatPollutantValue(pollutants.nitrogen_dioxide)} µg/m³<br>
@@ -102,7 +168,22 @@ function showLocationData(lat, lon, title, addressText) {
 
                 <hr>
 
-                <b>Advisory</b><br>
+                <b>Weather Intelligence</b><br>
+                Weather Time: ${weatherData.time}<br>
+                Temperature: ${formatWeatherValue(weather.temperature_2m, "°C")}<br>
+                Humidity: ${formatWeatherValue(weather.relative_humidity_2m, "%")}<br>
+                Wind Speed: ${formatWeatherValue(weather.wind_speed_10m, "km/h")}<br>
+                Cloud Cover: ${formatWeatherValue(weather.cloud_cover, "%")}<br>
+                Rainfall: ${formatWeatherValue(weather.precipitation, "mm")}<br>
+
+                <hr>
+
+                <b>Smart Analysis</b><br>
+                ${analysis}<br>
+
+                <hr>
+
+                <b>Health Advisory</b><br>
                 ${aqiData.advisory}
             `);
         })
@@ -175,7 +256,7 @@ searchPanel.onAdd = function () {
 searchPanel.addTo(window.vayuMap);
 
 
-// Search any Indian city using OpenStreetMap and directly show HCHO + AQI value
+// Search any Indian city using OpenStreetMap and directly show HCHO + AQI + Weather
 function searchCity() {
     const input = document.getElementById("cityInput");
     const message = document.getElementById("citySearchMessage");
@@ -324,7 +405,7 @@ function loadHchoHotspots() {
 loadHchoHotspots();
 
 
-// Click location popup with real HCHO + AQI value
+// Click location popup with HCHO + AQI + Weather
 window.vayuMap.on("click", function (event) {
 
     const lat = event.latlng.lat;
