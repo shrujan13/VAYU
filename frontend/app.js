@@ -549,10 +549,10 @@ function showLocationData(lat, lon, title, addressText) {
         </div>
     `);
 
-    const hchoUrl = `http://127.0.0.1:5000/get_hcho_value?lat=${lat}&lon=${lon}`;
-    const aqiUrl = `http://127.0.0.1:5000/get_aqi_value?lat=${lat}&lon=${lon}`;
-    const weatherUrl = `http://127.0.0.1:5000/get_weather_value?lat=${lat}&lon=${lon}`;
-    const forecastUrl = `http://127.0.0.1:5000/get_aqi_forecast?lat=${lat}&lon=${lon}`;
+    const hchoUrl = `/get_hcho_value?lat=${lat}&lon=${lon}`;
+    const aqiUrl = `/get_aqi_value?lat=${lat}&lon=${lon}`;
+    const weatherUrl = `/get_weather_value?lat=${lat}&lon=${lon}`;
+    const forecastUrl = `/get_aqi_forecast?lat=${lat}&lon=${lon}`;
 
     Promise.all([
         fetch(hchoUrl).then(response => response.json()),
@@ -766,7 +766,7 @@ setTimeout(function () {
 
 
 // Load HCHO satellite layer
-fetch("http://127.0.0.1:5000/get_hcho_tile")
+fetch("/get_hcho_tile")
     .then(response => response.json())
     .then(data => {
 
@@ -825,7 +825,7 @@ function renderHotspotMarkers(hotspots) {
 
 // Poll hotspot scan status
 function pollHchoHotspots() {
-    fetch("http://127.0.0.1:5000/get_hcho_hotspots")
+    fetch("/get_hcho_hotspots")
         .then(response => response.json())
         .then(data => {
 
@@ -886,7 +886,7 @@ function loadHchoHotspots() {
     vayuStatus.message = "Starting background hotspot scan. Dashboard will remain usable.";
     renderStatusPanel();
 
-    fetch("http://127.0.0.1:5000/start_hcho_hotspot_scan")
+    fetch("/start_hcho_hotspot_scan")
         .then(response => response.json())
         .then(data => {
             console.log("Started Hotspot Scan:", data);
@@ -947,5 +947,3 @@ legend.onAdd = function () {
 
     return div;
 };
-
-legend.addTo(window.vayuMap);
